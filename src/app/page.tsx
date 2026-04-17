@@ -9,12 +9,7 @@ import {
   type HistoryItem,
 } from "@/lib/uploadpost";
 
-const trackedProfiles = [
-  { label: "TikTok", username: "findyourcatharsis" },
-  { label: "Instagram", username: "catharsisposts" },
-  { label: "X", username: "catharsisxyz" },
-  { label: "YouTube", username: "catharsisxyz" },
-];
+const trackedPlatforms = ["tiktok", "instagram", "x", "youtube"];
 
 function formatDate(value?: string) {
   if (!value) return "-";
@@ -26,46 +21,47 @@ function formatDate(value?: string) {
 }
 
 function formatPlatforms(item: HistoryItem) {
-  if (Array.isArray(item.platforms) && item.platforms.length) {
-    return item.platforms.join(", ");
-  }
   return item.platform || "-";
 }
 
-function AnalyticsCard({
-  label,
-  metrics,
-}: {
-  label: string;
-  metrics: AnalyticsMetric[];
-}) {
-  const summary = summarizeAnalytics(metrics);
+function formatNumber(value: number) {
+  return new Intl.NumberFormat("en-GB").format(value);
+}
+
+function AnalyticsCard({ metric }: { metric: AnalyticsMetric }) {
+  const summary = summarizeAnalytics(metric);
 
   return (
     <section className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-lg shadow-black/20">
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">{label}</h2>
+        <h2 className="text-lg font-semibold capitalize text-white">{metric.platform}</h2>
         <span className="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-medium text-cyan-200">
-          {metrics.length} datapoints
+          {metric.metric_type || "analytics"}
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <div className="rounded-xl bg-black/20 p-3">
           <div className="text-zinc-400">Followers</div>
-          <div className="mt-1 text-xl font-semibold text-white">{summary.followers || "-"}</div>
+          <div className="mt-1 text-xl font-semibold text-white">{formatNumber(summary.followers)}</div>
         </div>
         <div className="rounded-xl bg-black/20 p-3">
           <div className="text-zinc-400">Impressions</div>
-          <div className="mt-1 text-xl font-semibold text-white">{summary.impressions || "-"}</div>
+          <div className="mt-1 text-xl font-semibold text-white">{formatNumber(summary.impressions)}</div>
         </div>
         <div className="rounded-xl bg-black/20 p-3">
           <div className="text-zinc-400">Reach</div>
-          <div className="mt-1 text-xl font-semibold text-white">{summary.reach || "-"}</div>
+          <div className="mt-1 text-xl font-semibold text-white">{formatNumber(summary.reach)}</div>
         </div>
         <div className="rounded-xl bg-black/20 p-3">
           <div className="text-zinc-400">Profile views</div>
-          <div className="mt-1 text-xl font-semibold text-white">{summary.profileViews || "-"}</div>
+          <div className="mt-1 text-xl font-semibold text-white">{formatNumber(summary.profileViews)}</div>
         </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-300">
+        <span className="rounded-full bg-black/20 px-3 py-1">Likes: {formatNumber(summary.likes)}</span>
+        <span className="rounded-full bg-black/20 px-3 py-1">Comments: {formatNumber(summary.comments)}</span>
+        <span className="rounded-full bg-black/20 px-3 py-1">Shares: {formatNumber(summary.shares)}</span>
+        <span className="rounded-full bg-black/20 px-3 py-1">Saves: {formatNumber(summary.saves)}</span>
       </div>
     </section>
   );
@@ -76,8 +72,8 @@ function UpcomingPostCard({ item }: { item: HistoryItem }) {
     <article className="rounded-2xl border border-white/10 bg-white/5 p-4">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-white">{item.title || item.caption || "Untitled post"}</h3>
-          <p className="mt-1 text-xs text-zinc-400">{formatPlatforms(item)}</p>
+          <h3 className="text-sm font-semibold text-white">{item.post_title || item.post_caption || "Untitled post"}</h3>
+          <p className="mt-1 text-xs text-zinc-400">{formatPlatforms(item)} · {item.media_type || "post"}</p>
         </div>
         <span className="rounded-full bg-emerald-400/10 px-2.5 py-1 text-xs text-emerald-200">
           {item.status || "scheduled"}
@@ -95,10 +91,10 @@ function UpcomingPostCard({ item }: { item: HistoryItem }) {
 function RecentPostRow({ item }: { item: HistoryItem }) {
   return (
     <tr className="border-t border-white/10 align-top">
-      <td className="px-4 py-3 text-white">{item.title || item.caption || item.description || "Untitled"}</td>
+      <td className="px-4 py-3 text-white">{item.post_title || item.post_caption || "Untitled"}</td>
       <td className="px-4 py-3 text-zinc-300">{formatPlatforms(item)}</td>
       <td className="px-4 py-3 text-zinc-300">{item.status || "-"}</td>
-      <td className="px-4 py-3 text-zinc-300">{formatDate(item.created_at || item.scheduled_date)}</td>
+      <td className="px-4 py-3 text-zinc-300">{formatDate(item.upload_timestamp || item.scheduled_date)}</td>
       <td className="px-4 py-3 text-zinc-400">{item.request_id || "-"}</td>
     </tr>
   );
@@ -106,29 +102,17 @@ function RecentPostRow({ item }: { item: HistoryItem }) {
 
 export default async function Home() {
   let history: HistoryItem[] = [];
-  let analyticsByProfile: { label: string; metrics: AnalyticsMetric[] }[] = [];
+  let analytics: AnalyticsMetric[] = [];
   let error: string | null = null;
 
   try {
-    const historyResponse = await getHistory();
-    history = normalizeHistory(historyResponse);
+    const [historyResponse, analyticsResponse] = await Promise.all([
+      getHistory(),
+      getAnalytics(trackedPlatforms),
+    ]);
 
-    analyticsByProfile = await Promise.all(
-      trackedProfiles.map(async (profile) => {
-        try {
-          const response = await getAnalytics(profile.username);
-          return {
-            label: profile.label,
-            metrics: normalizeAnalytics(response),
-          };
-        } catch {
-          return {
-            label: profile.label,
-            metrics: [],
-          };
-        }
-      }),
-    );
+    history = normalizeHistory(historyResponse);
+    analytics = normalizeAnalytics(analyticsResponse);
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error loading Upload-Post data";
   }
@@ -155,14 +139,14 @@ export default async function Home() {
             <div className="font-semibold">Could not load Upload-Post data</div>
             <div className="mt-1 whitespace-pre-wrap text-red-100/80">{error}</div>
             <div className="mt-3 text-red-100/80">
-              Make sure <code>UPLOAD_POST_API_KEY</code> is set before running the dashboard.
+              Make sure <code>UPLOAD_POST_API_KEY</code> is set and the Upload-Post profile username is correct.
             </div>
           </section>
         ) : null}
 
         <section className="grid gap-4 lg:grid-cols-4">
-          {analyticsByProfile.map((profile) => (
-            <AnalyticsCard key={profile.label} label={profile.label} metrics={profile.metrics} />
+          {analytics.map((metric) => (
+            <AnalyticsCard key={metric.platform} metric={metric} />
           ))}
         </section>
 
@@ -180,7 +164,7 @@ export default async function Home() {
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-white/10 px-4 py-10 text-center text-zinc-400">
-                No upcoming scheduled posts found.
+                No upcoming scheduled posts found yet.
               </div>
             )}
           </div>
@@ -188,8 +172,8 @@ export default async function Home() {
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
             <h2 className="text-2xl font-semibold">What this v1 shows</h2>
             <ul className="mt-4 space-y-3 text-sm text-zinc-300">
-              <li>• Aggregated analytics cards for your main channels</li>
-              <li>• Upcoming scheduled posts pulled from Upload-Post history</li>
+              <li>• Real Upload-Post analytics using the Catharsis profile</li>
+              <li>• Upcoming scheduled posts from Upload-Post history</li>
               <li>• Recent upload history with request IDs for debugging</li>
               <li>• Ready for hook, CTA, and post-level performance panels next</li>
             </ul>
@@ -207,7 +191,7 @@ export default async function Home() {
                 <thead className="bg-black/20 text-zinc-400">
                   <tr>
                     <th className="px-4 py-3 font-medium">Title</th>
-                    <th className="px-4 py-3 font-medium">Platforms</th>
+                    <th className="px-4 py-3 font-medium">Platform</th>
                     <th className="px-4 py-3 font-medium">Status</th>
                     <th className="px-4 py-3 font-medium">When</th>
                     <th className="px-4 py-3 font-medium">Request ID</th>

@@ -1,5 +1,6 @@
 const API_BASE = process.env.UPLOAD_POST_API_BASE || "https://api.upload-post.com/api";
 const API_KEY = process.env.UPLOAD_POST_API_KEY;
+const PROFILE_USERNAME = process.env.UPLOAD_POST_PROFILE_USERNAME || "catharsis";
 
 function getHeaders() {
   if (!API_KEY) {
@@ -27,49 +28,42 @@ async function fetchJson<T>(path: string): Promise<T> {
 }
 
 export type AnalyticsMetric = {
-  metric_type?: string;
-  value?: number;
-  date?: string;
-  platform?: string;
+  platform: string;
   followers?: number;
   impressions?: number;
   reach?: number;
-  profile_views?: number;
+  profileViews?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  saves?: number;
+  views?: number;
+  metric_type?: string;
+  primary_impressions_field?: string;
+  available_metrics?: string[];
+  reach_timeseries?: Array<{ date: string; value: number }>;
 };
 
-export type AnalyticsResponse = {
-  username?: string;
-  profile_username?: string;
-  profile?: string;
-  analytics?: AnalyticsMetric[];
-  metrics?: AnalyticsMetric[];
-  data?: AnalyticsMetric[];
-  [key: string]: unknown;
-};
+export type AnalyticsResponse = Record<string, Omit<AnalyticsMetric, "platform">>;
 
 export type HistoryItem = {
-  id?: string | number;
   request_id?: string;
   job_id?: string;
-  title?: string;
-  caption?: string;
-  description?: string;
-  status?: string;
+  profile_username?: string;
   platform?: string;
-  platforms?: string[];
-  scheduled_date?: string;
-  created_at?: string;
   media_type?: string;
+  upload_timestamp?: string;
+  scheduled_date?: string;
+  success?: boolean;
   post_url?: string;
-  thumbnail_url?: string;
+  post_title?: string;
+  post_caption?: string;
+  status?: string;
   [key: string]: unknown;
 };
 
 export type HistoryResponse = {
-  uploads?: HistoryItem[];
-  data?: HistoryItem[];
   history?: HistoryItem[];
-  items?: HistoryItem[];
   [key: string]: unknown;
 };
 
@@ -77,16 +71,29 @@ export async function getHistory() {
   return fetchJson<HistoryResponse>("/uploadposts/history");
 }
 
-export async function getAnalytics(profileUsername: string) {
-  return fetchJson<AnalyticsResponse>(`/analytics/${encodeURIComponent(profileUsername)}`);
+export async function getAnalytics(platforms: string[]) {
+  const params = new URLSearchParams({
+    platforms: platforms.join(","),
+  });
+
+  return fetchJson<AnalyticsResponse>(`/analytics/${encodeURIComponent(PROFILE_USERNAME)}?${params.toString()}`);
 }
 
 export function normalizeHistory(response: HistoryResponse): HistoryItem[] {
-  return response.uploads || response.data || response.history || response.items || [];
+  return (response.history || []).map((item) => ({
+    ...item,
+    title: item.post_title,
+    caption: item.post_caption,
+    created_at: item.upload_timestamp,
+    status: item.success === true ? "published" : item.success === false ? "failed" : item.status,
+  }));
 }
 
 export function normalizeAnalytics(response: AnalyticsResponse): AnalyticsMetric[] {
-  return response.analytics || response.metrics || response.data || [];
+  return Object.entries(response).map(([platform, metrics]) => ({
+    platform,
+    ...metrics,
+  }));
 }
 
 export function groupUpcomingPosts(items: HistoryItem[]) {
@@ -97,20 +104,28 @@ export function groupUpcomingPosts(items: HistoryItem[]) {
     .sort((a, b) => new Date(a.scheduled_date || 0).getTime() - new Date(b.scheduled_date || 0).getTime());
 }
 
-export function summarizeAnalytics(metrics: AnalyticsMetric[]) {
-  const summary = {
-    followers: 0,
-    impressions: 0,
-    reach: 0,
-    profileViews: 0,
-  };
-
-  for (const metric of metrics) {
-    summary.followers += Number(metric.followers || 0);
-    summary.impressions += Number(metric.impressions || 0);
-    summary.reach += Number(metric.reach || 0);
-    summary.profileViews += Number(metric.profile_views || 0);
+export function summarizeAnalytics(metric?: AnalyticsMetric) {
+  if (!metric) {
+    return {
+      followers: 0,
+      impressions: 0,
+      reach: 0,
+      profileViews: 0,
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      saves: 0,
+    };
   }
 
-  return summary;
+  return {
+    followers: Number(metric.followers || 0),
+    impressions: Number(metric.impressions || metric.views || 0),
+    reach: Number(metric.reach || 0),
+    profileViews: Number(metric.profileViews || 0),
+    likes: Number(metric.likes || 0),
+    comments: Number(metric.comments || 0),
+    shares: Number(metric.shares || 0),
+    saves: Number(metric.saves || 0),
+  };
 }
