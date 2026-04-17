@@ -24,48 +24,17 @@ function formatDate(value?: string) {
   return formatBerlinDateTime(value);
 }
 
-function formatMonthDay(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-    timeZone: "Europe/Berlin",
-  }).format(new Date(value));
-}
-
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "Europe/Berlin",
-  }).format(new Date(value));
-}
-
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-GB").format(value);
 }
 
-function buildCalendarDays(items: ScheduledPost[]) {
-  return items.map((item) => ({
-    ...item,
-    dayLabel: formatMonthDay(item.scheduled_date),
-    timeLabel: formatTime(item.scheduled_date),
-  }));
-}
-
 function StatBox({ label, value }: { label: string; value: number }) {
   return (
-<<<<<<< Updated upstream
-    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">{label}</div>
-      <div className="mt-2 text-3xl font-semibold leading-none text-white">{formatNumber(value)}</div>
-=======
     <div className="rounded-2xl border border-white/5 bg-black/15 p-4">
       <div className="text-[10px] uppercase tracking-[0.2em] text-[#b9a7b6]">{label}</div>
       <div className="mt-2 break-words font-display text-3xl text-[#f3e7d7]">
         {formatNumber(value)}
       </div>
->>>>>>> Stashed changes
     </div>
   );
 }
@@ -97,52 +66,6 @@ function AnalyticsCard({ metric }: { metric: AnalyticsMetric }) {
   );
 }
 
-<<<<<<< Updated upstream
-function CalendarTile({ item }: { item: ScheduledPost & { dayLabel: string; timeLabel: string } }) {
-  return (
-    <article className="rounded-3xl border border-white/10 bg-white/5 p-4">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs uppercase tracking-[0.18em] text-[#d8c6f2]">{item.dayLabel}</div>
-          <div className="mt-1 text-2xl font-semibold text-white">{item.timeLabel}</div>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          {(item.platforms || []).map((platform) => (
-            <span key={platform} className="soft-pill rounded-full px-3 py-1 text-[11px] capitalize text-zinc-300">
-              {platform}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {item.preview_url ? (
-        <div className="relative mb-4 h-32 overflow-hidden rounded-2xl border border-white/10">
-          <Image src={item.preview_url} alt={item.title || "Preview"} fill className="object-cover" unoptimized />
-        </div>
-      ) : (
-        <div className="mb-4 flex h-32 items-center justify-center rounded-2xl border border-white/10 bg-[#1d1732] text-sm uppercase tracking-[0.18em] text-zinc-400">
-          {item.post_type}
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-[#a9ddd9]">
-        <span>{item.post_type}</span>
-        <span>•</span>
-        <span>{item.original_timezone || "UTC"}</span>
-      </div>
-
-      <h3 className="mt-3 line-clamp-3 text-base font-semibold text-white">{item.title || item.caption || "Untitled scheduled post"}</h3>
-      {(item.description || item.caption) && (
-        <p className="mt-2 line-clamp-4 text-sm text-zinc-400">{item.description || item.caption}</p>
-      )}
-
-      <div className="mt-4 text-xs text-zinc-500">Job ID: {item.job_id}</div>
-    </article>
-  );
-}
-
-=======
->>>>>>> Stashed changes
 function RecentPostRow({ item }: { item: HistoryItem }) {
   return (
     <tr className="border-t border-white/5 align-top">
@@ -167,17 +90,14 @@ function getTopPosts(postAnalytics: PostAnalyticsResponse[]) {
       }, 0);
       const totalEngagement = platforms.reduce((sum, [, data]) => {
         const metrics = data.post_metrics || {};
-<<<<<<< Updated upstream
-        return sum + Number(metrics.likes || 0) + Number(metrics.comments || 0) + Number(metrics.shares || 0) + Number(metrics.saves || 0) + Number(metrics.favorites || 0);
-=======
         return (
           sum +
           Number(metrics.likes || 0) +
           Number(metrics.comments || 0) +
           Number(metrics.shares || 0) +
-          Number(metrics.saves || 0)
+          Number(metrics.saves || 0) +
+          Number(metrics.favorites || 0)
         );
->>>>>>> Stashed changes
       }, 0);
 
       return {
@@ -222,28 +142,19 @@ export default async function Home() {
     totalImpressionsRange = `${totalImpressionsResponse.start_date} → ${totalImpressionsResponse.end_date}`;
     calendarUrl = calendarResponse.access_url;
 
-<<<<<<< Updated upstream
-    const uniqueRequestIds = Array.from(new Set(history.map((item) => item.request_id).filter(Boolean))).slice(0, 12) as string[];
-    const postAnalytics = await Promise.all(uniqueRequestIds.map((requestId) => getPostAnalytics(requestId)));
-=======
     const uniqueRequestIds = Array.from(
       new Set(history.map((item) => item.request_id).filter(Boolean)),
-    ).slice(0, 6) as string[];
+    ).slice(0, 12) as string[];
     const postAnalytics = await Promise.all(
       uniqueRequestIds.map((requestId) => getPostAnalytics(requestId)),
     );
->>>>>>> Stashed changes
     topPosts = getTopPosts(postAnalytics);
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error loading Upload-Post data";
   }
 
   const recent = [...history].slice(0, 12);
-<<<<<<< Updated upstream
-  const calendarDays = buildCalendarDays(scheduledPosts);
-=======
   const nowTzLabel = berlinTzLabel(new Date());
->>>>>>> Stashed changes
 
   return (
     <main className="min-h-screen text-[#f3e7d7]">
@@ -282,17 +193,12 @@ export default async function Home() {
                 </div>
               </div>
               <div className="card-glass rounded-3xl p-5">
-<<<<<<< Updated upstream
-                <div className="text-sm uppercase tracking-[0.18em] text-[#a9ddd9]">Calendar access</div>
-                <p className="mt-3 text-sm text-zinc-300">Open the native Upload-Post calendar if you want the official full calendar view.</p>
-=======
                 <div className="text-[10px] uppercase tracking-[0.22em] text-[#b489c7]">
                   Native calendar
                 </div>
                 <p className="mt-3 text-sm leading-relaxed text-[#d9c9bc]">
                   Open the Upload-Post calendar for a deeper scheduling view.
                 </p>
->>>>>>> Stashed changes
                 <a
                   href={calendarUrl || "#"}
                   target="_blank"
@@ -321,52 +227,6 @@ export default async function Home() {
           ))}
         </section>
 
-<<<<<<< Updated upstream
-        <section className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
-          <div className="card-glass rounded-[2rem] p-6">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <h2 className="text-2xl font-semibold">Schedule calendar</h2>
-                <p className="mt-1 text-sm text-zinc-400">A custom calendar view built from the real Upload-Post schedule endpoint</p>
-              </div>
-              <span className="soft-pill rounded-full px-3 py-1 text-sm text-zinc-300">{scheduledPosts.length} scheduled</span>
-            </div>
-            {calendarDays.length ? (
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {calendarDays.map((item) => (
-                  <CalendarTile key={item.job_id} item={item} />
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-dashed border-white/10 px-4 py-10 text-center text-zinc-400">
-                No scheduled items found yet.
-              </div>
-            )}
-          </div>
-
-          <div className="card-glass rounded-[2rem] p-6">
-            <h2 className="text-2xl font-semibold">Overview</h2>
-            <div className="mt-5 space-y-4 text-sm text-zinc-300">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-[#a9ddd9]">Scheduled posts</div>
-                <div className="mt-2 text-3xl font-semibold text-white">{formatNumber(scheduledPosts.length)}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <div className="text-xs uppercase tracking-[0.18em] text-[#a9ddd9]">Recent uploads</div>
-                <div className="mt-2 text-3xl font-semibold text-white">{formatNumber(recent.length)}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-zinc-400">
-                Next good upgrade: platform-colored badges and post detail drawers.
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="card-glass rounded-[2rem] p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-2xl font-semibold">Top posts</h2>
-            <span className="text-sm text-zinc-400">Posts with real post-level analytics</span>
-=======
         {/* ---------- content calendar ---------- */}
         <ContentCalendar posts={scheduledPosts} />
 
@@ -377,8 +237,7 @@ export default async function Home() {
               <div className="text-[11px] uppercase tracking-[0.28em] text-[#e7b894]/80">Signal</div>
               <h2 className="font-display mt-2 text-3xl sm:text-4xl">Top posts</h2>
             </div>
-            <span className="text-xs text-[#b9a7b6]">Latest request IDs · ranked by views</span>
->>>>>>> Stashed changes
+            <span className="text-xs text-[#b9a7b6]">Posts with real post-level analytics</span>
           </div>
           {topPosts.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
