@@ -73,6 +73,26 @@ export type HistoryResponse = {
   [key: string]: unknown;
 };
 
+export type ScheduledPost = {
+  job_id: string;
+  scheduled_date: string;
+  post_type: string;
+  profile_username: string;
+  title?: string;
+  caption?: string;
+  description?: string;
+  preview_url?: string | null;
+  thumbnail_url?: string | null;
+  platforms?: string[];
+  original_timezone?: string;
+  original_scheduled_str?: string;
+  platform_content?: Record<string, { title?: string; caption?: string }>;
+};
+
+export type ScheduleResponse = {
+  scheduled_posts?: ScheduledPost[];
+};
+
 export type TotalImpressionsResponse = {
   success: boolean;
   profile_username: string;
@@ -112,6 +132,10 @@ export type CalendarJwtResponse = {
 
 export async function getHistory() {
   return fetchJson<HistoryResponse>("/uploadposts/history");
+}
+
+export async function getScheduledPosts() {
+  return fetchJson<ScheduleResponse>("/uploadposts/schedule");
 }
 
 export async function getAnalytics(platforms: string[]) {
@@ -162,6 +186,12 @@ export function normalizeAnalytics(response: AnalyticsResponse): AnalyticsMetric
     platform,
     ...metrics,
   }));
+}
+
+export function normalizeScheduledPosts(response: ScheduleResponse): ScheduledPost[] {
+  return (response.scheduled_posts || []).sort(
+    (a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime(),
+  );
 }
 
 export function summarizeAnalytics(metric?: AnalyticsMetric) {
