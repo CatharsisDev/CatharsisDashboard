@@ -27,7 +27,7 @@ function formatDate(value?: string) {
   }).format(new Date(value));
 }
 
-function formatDay(value: string) {
+function formatMonthDay(value: string) {
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
@@ -48,17 +48,11 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("en-GB").format(value);
 }
 
-function groupedSchedule(items: ScheduledPost[]) {
-  const groups = new Map<string, ScheduledPost[]>();
-  for (const item of items) {
-    const key = formatDay(item.scheduled_date);
-    const list = groups.get(key) || [];
-    list.push(item);
-    groups.set(key, list);
-  }
-  return Array.from(groups.entries()).map(([day, posts]) => ({
-    day,
-    posts: posts.sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()),
+function buildCalendarDays(items: ScheduledPost[]) {
+  return items.map((item) => ({
+    ...item,
+    dayLabel: formatMonthDay(item.scheduled_date),
+    timeLabel: formatTime(item.scheduled_date),
   }));
 }
 
@@ -98,37 +92,46 @@ function AnalyticsCard({ metric }: { metric: AnalyticsMetric }) {
   );
 }
 
-function ScheduleItem({ item }: { item: ScheduledPost }) {
+function CalendarTile({ item }: { item: ScheduledPost & { dayLabel: string; timeLabel: string } }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <div className="flex items-start gap-4">
-        <div className="min-w-[62px] rounded-2xl border border-white/10 bg-[#1e1732] px-3 py-2 text-center">
-          <div className="text-xs text-zinc-400">{formatTime(item.scheduled_date)}</div>
+    <article className="rounded-3xl border border-white/10 bg-white/5 p-4">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.18em] text-[#d8c6f2]">{item.dayLabel}</div>
+          <div className="mt-1 text-2xl font-semibold text-white">{item.timeLabel}</div>
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap gap-2">
-            {(item.platforms || []).map((platform) => (
-              <span key={platform} className="soft-pill rounded-full px-3 py-1 text-[11px] capitalize text-zinc-300">
-                {platform}
-              </span>
-            ))}
-            <span className="soft-pill rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-[#cdbef0]">
-              {item.post_type}
+        <div className="flex flex-wrap justify-end gap-2">
+          {(item.platforms || []).map((platform) => (
+            <span key={platform} className="soft-pill rounded-full px-3 py-1 text-[11px] capitalize text-zinc-300">
+              {platform}
             </span>
-          </div>
-          <h3 className="mt-3 text-base font-semibold text-white">{item.title || item.caption || "Untitled scheduled post"}</h3>
-          {(item.description || item.caption) && (
-            <p className="mt-2 line-clamp-3 text-sm text-zinc-400">{item.description || item.caption}</p>
-          )}
-          <div className="mt-3 text-xs text-zinc-500">Job ID: {item.job_id}</div>
+          ))}
         </div>
-        {item.preview_url ? (
-          <div className="relative hidden h-20 w-20 overflow-hidden rounded-2xl border border-white/10 md:block">
-            <Image src={item.preview_url} alt={item.title || "Preview"} fill className="object-cover" unoptimized />
-          </div>
-        ) : null}
       </div>
-    </div>
+
+      {item.preview_url ? (
+        <div className="relative mb-4 h-32 overflow-hidden rounded-2xl border border-white/10">
+          <Image src={item.preview_url} alt={item.title || "Preview"} fill className="object-cover" unoptimized />
+        </div>
+      ) : (
+        <div className="mb-4 flex h-32 items-center justify-center rounded-2xl border border-white/10 bg-[#1d1732] text-sm uppercase tracking-[0.18em] text-zinc-400">
+          {item.post_type}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-[#a9ddd9]">
+        <span>{item.post_type}</span>
+        <span>•</span>
+        <span>{item.original_timezone || "UTC"}</span>
+      </div>
+
+      <h3 className="mt-3 line-clamp-3 text-base font-semibold text-white">{item.title || item.caption || "Untitled scheduled post"}</h3>
+      {(item.description || item.caption) && (
+        <p className="mt-2 line-clamp-4 text-sm text-zinc-400">{item.description || item.caption}</p>
+      )}
+
+      <div className="mt-4 text-xs text-zinc-500">Job ID: {item.job_id}</div>
+    </article>
   );
 }
 
@@ -154,7 +157,7 @@ function getTopPosts(postAnalytics: PostAnalyticsResponse[]) {
       }, 0);
       const totalEngagement = platforms.reduce((sum, [, data]) => {
         const metrics = data.post_metrics || {};
-        return sum + Number(metrics.likes || 0) + Number(metrics.comments || 0) + Number(metrics.shares || 0) + Number(metrics.saves || 0);
+        return sum + Number(metrics.likes || 0) + Number(metrics.comments || 0) + Number(metrics.shares || 0) + Number(metrics.saves || 0) + Number(metrics.favorites || 0);
       }, 0);
 
       return {
@@ -167,6 +170,7 @@ function getTopPosts(postAnalytics: PostAnalyticsResponse[]) {
         platforms,
       };
     })
+    .filter((post) => post.totalViews > 0 || post.totalEngagement > 0)
     .sort((a, b) => b.totalViews - a.totalViews)
     .slice(0, 6);
 }
@@ -197,7 +201,7 @@ export default async function Home() {
     totalImpressionsRange = `${totalImpressionsResponse.start_date} → ${totalImpressionsResponse.end_date}`;
     calendarUrl = calendarResponse.access_url;
 
-    const uniqueRequestIds = Array.from(new Set(history.map((item) => item.request_id).filter(Boolean))).slice(0, 6) as string[];
+    const uniqueRequestIds = Array.from(new Set(history.map((item) => item.request_id).filter(Boolean))).slice(0, 12) as string[];
     const postAnalytics = await Promise.all(uniqueRequestIds.map((requestId) => getPostAnalytics(requestId)));
     topPosts = getTopPosts(postAnalytics);
   } catch (err) {
@@ -205,7 +209,7 @@ export default async function Home() {
   }
 
   const recent = [...history].slice(0, 12);
-  const scheduleDays = groupedSchedule(scheduledPosts);
+  const calendarDays = buildCalendarDays(scheduledPosts);
 
   return (
     <main className="min-h-screen text-white">
@@ -260,25 +264,14 @@ export default async function Home() {
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="text-2xl font-semibold">Schedule calendar</h2>
-                <p className="mt-1 text-sm text-zinc-400">Upcoming posts grouped by day using the real Upload-Post schedule endpoint</p>
+                <p className="mt-1 text-sm text-zinc-400">A custom calendar view built from the real Upload-Post schedule endpoint</p>
               </div>
               <span className="soft-pill rounded-full px-3 py-1 text-sm text-zinc-300">{scheduledPosts.length} scheduled</span>
             </div>
-            {scheduleDays.length ? (
-              <div className="space-y-6">
-                {scheduleDays.map((group) => (
-                  <div key={group.day}>
-                    <div className="mb-3 flex items-center gap-3">
-                      <div className="h-px flex-1 bg-white/10" />
-                      <div className="text-sm uppercase tracking-[0.18em] text-[#d4c4f1]">{group.day}</div>
-                      <div className="h-px flex-1 bg-white/10" />
-                    </div>
-                    <div className="space-y-3">
-                      {group.posts.map((item) => (
-                        <ScheduleItem key={item.job_id} item={item} />
-                      ))}
-                    </div>
-                  </div>
+            {calendarDays.length ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {calendarDays.map((item) => (
+                  <CalendarTile key={item.job_id} item={item} />
                 ))}
               </div>
             ) : (
@@ -300,7 +293,7 @@ export default async function Home() {
                 <div className="mt-2 text-3xl font-semibold text-white">{formatNumber(recent.length)}</div>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-zinc-400">
-                This version focuses on calm readability first, then native analytics and scheduling underneath.
+                Next good upgrade: platform-colored badges and post detail drawers.
               </div>
             </div>
           </div>
@@ -309,7 +302,7 @@ export default async function Home() {
         <section className="card-glass rounded-[2rem] p-6">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-2xl font-semibold">Top posts</h2>
-            <span className="text-sm text-zinc-400">Latest request IDs ranked by views</span>
+            <span className="text-sm text-zinc-400">Posts with real post-level analytics</span>
           </div>
           {topPosts.length ? (
             <div className="grid gap-4 lg:grid-cols-2">
