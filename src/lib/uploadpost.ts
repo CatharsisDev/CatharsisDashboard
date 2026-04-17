@@ -1,6 +1,8 @@
 const API_BASE = process.env.UPLOAD_POST_API_BASE || "https://api.upload-post.com/api";
 const API_KEY = process.env.UPLOAD_POST_API_KEY;
 const PROFILE_USERNAME = process.env.UPLOAD_POST_PROFILE_USERNAME || "catharsis";
+const CALENDAR_TITLE = process.env.UPLOAD_POST_CALENDAR_TITLE || "Catharsis Content Calendar";
+const CALENDAR_LOGO = process.env.UPLOAD_POST_CALENDAR_LOGO || "";
 
 function getHeaders() {
   if (!API_KEY) {
@@ -13,9 +15,13 @@ function getHeaders() {
   };
 }
 
-async function fetchJson<T>(path: string): Promise<T> {
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
-    headers: getHeaders(),
+    ...init,
+    headers: {
+      ...getHeaders(),
+      ...(init?.headers || {}),
+    },
     cache: "no-store",
   });
 
@@ -67,6 +73,43 @@ export type HistoryResponse = {
   [key: string]: unknown;
 };
 
+export type TotalImpressionsResponse = {
+  success: boolean;
+  profile_username: string;
+  start_date: string;
+  end_date: string;
+  total_impressions: number;
+};
+
+export type PlatformPostAnalytics = {
+  success?: boolean;
+  platform_post_id?: string;
+  post_url?: string;
+  post_metrics?: Record<string, number>;
+  profile_snapshot_latest?: Record<string, number>;
+  profile_snapshot_at_post_date?: Record<string, number>;
+  profile_snapshot_latest_date?: string;
+};
+
+export type PostAnalyticsResponse = {
+  success: boolean;
+  post?: {
+    request_id?: string;
+    profile_username?: string;
+    post_title?: string;
+    post_caption?: string;
+    media_type?: string;
+    upload_timestamp?: string;
+  };
+  platforms?: Record<string, PlatformPostAnalytics>;
+};
+
+export type CalendarJwtResponse = {
+  success: boolean;
+  access_url: string;
+  duration?: string;
+};
+
 export async function getHistory() {
   return fetchJson<HistoryResponse>("/uploadposts/history");
 }
@@ -77,6 +120,31 @@ export async function getAnalytics(platforms: string[]) {
   });
 
   return fetchJson<AnalyticsResponse>(`/analytics/${encodeURIComponent(PROFILE_USERNAME)}?${params.toString()}`);
+}
+
+export async function getTotalImpressions() {
+  return fetchJson<TotalImpressionsResponse>(`/uploadposts/total-impressions/${encodeURIComponent(PROFILE_USERNAME)}`);
+}
+
+export async function getPostAnalytics(requestId: string) {
+  return fetchJson<PostAnalyticsResponse>(`/uploadposts/post-analytics/${encodeURIComponent(requestId)}`);
+}
+
+export async function getReadOnlyCalendarUrl() {
+  const body = {
+    username: PROFILE_USERNAME,
+    readonly_calendar: true,
+    connect_title: CALENDAR_TITLE,
+    ...(CALENDAR_LOGO ? { logo_image: CALENDAR_LOGO } : {}),
+  };
+
+  return fetchJson<CalendarJwtResponse>("/uploadposts/users/generate-jwt", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
 }
 
 export function normalizeHistory(response: HistoryResponse): HistoryItem[] {
@@ -94,14 +162,6 @@ export function normalizeAnalytics(response: AnalyticsResponse): AnalyticsMetric
     platform,
     ...metrics,
   }));
-}
-
-export function groupUpcomingPosts(items: HistoryItem[]) {
-  const now = Date.now();
-
-  return items
-    .filter((item) => item.scheduled_date && new Date(item.scheduled_date).getTime() >= now)
-    .sort((a, b) => new Date(a.scheduled_date || 0).getTime() - new Date(b.scheduled_date || 0).getTime());
 }
 
 export function summarizeAnalytics(metric?: AnalyticsMetric) {
