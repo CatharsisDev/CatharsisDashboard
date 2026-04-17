@@ -1,7 +1,5 @@
-import ContentCalendar, {
-  berlinTzLabel,
-  formatBerlinDateTime,
-} from "./content-calendar";
+import ContentCalendar from "./content-calendar";
+import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
 import {
   getAnalytics,
   getHistory,
