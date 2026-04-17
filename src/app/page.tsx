@@ -27,15 +27,46 @@ function formatDate(value?: string) {
   }).format(new Date(value));
 }
 
+function formatDay(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "Europe/Berlin",
+  }).format(new Date(value));
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Berlin",
+  }).format(new Date(value));
+}
+
 function formatNumber(value: number) {
   return new Intl.NumberFormat("en-GB").format(value);
 }
 
-function MetricTile({ label, value }: { label: string; value: number }) {
+function groupedSchedule(items: ScheduledPost[]) {
+  const groups = new Map<string, ScheduledPost[]>();
+  for (const item of items) {
+    const key = formatDay(item.scheduled_date);
+    const list = groups.get(key) || [];
+    list.push(item);
+    groups.set(key, list);
+  }
+  return Array.from(groups.entries()).map(([day, posts]) => ({
+    day,
+    posts: posts.sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime()),
+  }));
+}
+
+function StatBox({ label, value }: { label: string; value: number }) {
   return (
-    <div className="card-glass min-w-0 rounded-2xl p-4">
-      <div className="text-[11px] uppercase tracking-[0.16em] text-zinc-400">{label}</div>
-      <div className="mt-2 break-words text-2xl font-semibold text-white">{formatNumber(value)}</div>
+    <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">{label}</div>
+      <div className="mt-2 text-3xl font-semibold leading-none text-white">{formatNumber(value)}</div>
     </div>
   );
 }
@@ -51,11 +82,11 @@ function AnalyticsCard({ metric }: { metric: AnalyticsMetric }) {
           {metric.metric_type || "analytics"}
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <MetricTile label="Followers" value={summary.followers} />
-        <MetricTile label="Impressions" value={summary.impressions} />
-        <MetricTile label="Reach" value={summary.reach} />
-        <MetricTile label="Profile views" value={summary.profileViews} />
+      <div className="grid grid-cols-2 gap-3">
+        <StatBox label="Followers" value={summary.followers} />
+        <StatBox label="Impressions" value={summary.impressions} />
+        <StatBox label="Reach" value={summary.reach} />
+        <StatBox label="Profile views" value={summary.profileViews} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-zinc-300 sm:grid-cols-4">
         <span className="soft-pill rounded-full px-3 py-1">Likes: {formatNumber(summary.likes)}</span>
@@ -67,40 +98,37 @@ function AnalyticsCard({ metric }: { metric: AnalyticsMetric }) {
   );
 }
 
-function ScheduledPostCard({ item }: { item: ScheduledPost }) {
+function ScheduleItem({ item }: { item: ScheduledPost }) {
   return (
-    <article className="card-glass overflow-hidden rounded-3xl">
-      {item.preview_url ? (
-        <div className="relative h-44 w-full">
-          <Image src={item.preview_url} alt={item.title || "Scheduled post preview"} fill className="object-cover" unoptimized />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#120f22] via-transparent to-transparent" />
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+      <div className="flex items-start gap-4">
+        <div className="min-w-[62px] rounded-2xl border border-white/10 bg-[#1e1732] px-3 py-2 text-center">
+          <div className="text-xs text-zinc-400">{formatTime(item.scheduled_date)}</div>
         </div>
-      ) : (
-        <div className="flex h-44 items-center justify-center bg-gradient-to-br from-[#2a1f46] to-[#171226] text-sm text-zinc-300">
-          {item.post_type.toUpperCase()} POST
-        </div>
-      )}
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-xs uppercase tracking-[0.16em] text-[#cdbef0]">{item.post_type}</div>
-            <h3 className="mt-2 line-clamp-3 text-lg font-semibold text-white">{item.title || item.caption || "Untitled scheduled post"}</h3>
-          </div>
-          <span className="soft-pill rounded-full px-3 py-1 text-xs text-[#a9ddd9]">scheduled</span>
-        </div>
-        <div className="mt-4 space-y-2 text-sm text-zinc-300">
-          <div>{formatDate(item.scheduled_date)}</div>
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap gap-2">
             {(item.platforms || []).map((platform) => (
-              <span key={platform} className="soft-pill rounded-full px-3 py-1 text-xs capitalize">
+              <span key={platform} className="soft-pill rounded-full px-3 py-1 text-[11px] capitalize text-zinc-300">
                 {platform}
               </span>
             ))}
+            <span className="soft-pill rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.14em] text-[#cdbef0]">
+              {item.post_type}
+            </span>
           </div>
-          <div className="text-xs text-zinc-500">Job ID: {item.job_id}</div>
+          <h3 className="mt-3 text-base font-semibold text-white">{item.title || item.caption || "Untitled scheduled post"}</h3>
+          {(item.description || item.caption) && (
+            <p className="mt-2 line-clamp-3 text-sm text-zinc-400">{item.description || item.caption}</p>
+          )}
+          <div className="mt-3 text-xs text-zinc-500">Job ID: {item.job_id}</div>
         </div>
+        {item.preview_url ? (
+          <div className="relative hidden h-20 w-20 overflow-hidden rounded-2xl border border-white/10 md:block">
+            <Image src={item.preview_url} alt={item.title || "Preview"} fill className="object-cover" unoptimized />
+          </div>
+        ) : null}
       </div>
-    </article>
+    </div>
   );
 }
 
@@ -177,6 +205,7 @@ export default async function Home() {
   }
 
   const recent = [...history].slice(0, 12);
+  const scheduleDays = groupedSchedule(scheduledPosts);
 
   return (
     <main className="min-h-screen text-white">
@@ -199,7 +228,7 @@ export default async function Home() {
               </div>
               <div className="card-glass rounded-3xl p-5">
                 <div className="text-sm uppercase tracking-[0.18em] text-[#a9ddd9]">Calendar access</div>
-                <p className="mt-3 text-sm text-zinc-300">Open the native Upload-Post calendar for a fuller scheduling view.</p>
+                <p className="mt-3 text-sm text-zinc-300">Open the native Upload-Post calendar if you want the official full calendar view.</p>
                 <a
                   href={calendarUrl || "#"}
                   target="_blank"
@@ -226,19 +255,30 @@ export default async function Home() {
           ))}
         </section>
 
-        <section className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
+        <section className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
           <div className="card-glass rounded-[2rem] p-6">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h2 className="text-2xl font-semibold">Scheduled content</h2>
-                <p className="mt-1 text-sm text-zinc-400">Real future posts from Upload-Post schedule data</p>
+                <h2 className="text-2xl font-semibold">Schedule calendar</h2>
+                <p className="mt-1 text-sm text-zinc-400">Upcoming posts grouped by day using the real Upload-Post schedule endpoint</p>
               </div>
               <span className="soft-pill rounded-full px-3 py-1 text-sm text-zinc-300">{scheduledPosts.length} scheduled</span>
             </div>
-            {scheduledPosts.length ? (
-              <div className="grid gap-4 md:grid-cols-2">
-                {scheduledPosts.slice(0, 8).map((item) => (
-                  <ScheduledPostCard key={item.job_id} item={item} />
+            {scheduleDays.length ? (
+              <div className="space-y-6">
+                {scheduleDays.map((group) => (
+                  <div key={group.day}>
+                    <div className="mb-3 flex items-center gap-3">
+                      <div className="h-px flex-1 bg-white/10" />
+                      <div className="text-sm uppercase tracking-[0.18em] text-[#d4c4f1]">{group.day}</div>
+                      <div className="h-px flex-1 bg-white/10" />
+                    </div>
+                    <div className="space-y-3">
+                      {group.posts.map((item) => (
+                        <ScheduleItem key={item.job_id} item={item} />
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -249,13 +289,20 @@ export default async function Home() {
           </div>
 
           <div className="card-glass rounded-[2rem] p-6">
-            <h2 className="text-2xl font-semibold">Catharsis feel</h2>
-            <ul className="mt-4 space-y-3 text-sm text-zinc-300">
-              <li>• darker, softer palette instead of generic SaaS blue</li>
-              <li>• glass panels and calmer contrast</li>
-              <li>• calendar driven by the real schedule endpoint</li>
-              <li>• room to add hook and CTA intelligence next</li>
-            </ul>
+            <h2 className="text-2xl font-semibold">Overview</h2>
+            <div className="mt-5 space-y-4 text-sm text-zinc-300">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-[#a9ddd9]">Scheduled posts</div>
+                <div className="mt-2 text-3xl font-semibold text-white">{formatNumber(scheduledPosts.length)}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="text-xs uppercase tracking-[0.18em] text-[#a9ddd9]">Recent uploads</div>
+                <div className="mt-2 text-3xl font-semibold text-white">{formatNumber(recent.length)}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-zinc-400">
+                This version focuses on calm readability first, then native analytics and scheduling underneath.
+              </div>
+            </div>
           </div>
         </section>
 
@@ -272,8 +319,8 @@ export default async function Home() {
                   <h3 className="mt-2 text-lg font-semibold text-white">{post.title}</h3>
                   <div className="mt-2 text-sm text-zinc-400">{formatDate(post.uploadedAt)}</div>
                   <div className="mt-4 grid grid-cols-2 gap-3">
-                    <MetricTile label="Total views" value={post.totalViews} />
-                    <MetricTile label="Engagement" value={post.totalEngagement} />
+                    <StatBox label="Total views" value={post.totalViews} />
+                    <StatBox label="Engagement" value={post.totalEngagement} />
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-300">
                     {post.platforms.map(([platform, data]) => {
