@@ -5,9 +5,20 @@ import type { ScheduledPost } from "@/lib/uploadpost";
 import {
   BERLIN_TZ as BERLIN,
   berlinTzLabel,
-  formatBerlinDateTime,
-  formatBerlinTime,
+  formatScheduledBerlin,
+  formatScheduledBerlinTime,
+  resolveScheduledInstant,
 } from "@/lib/tz";
+
+/**
+ * Resolve a ScheduledPost to the real instant it fires at.
+ * Prefers the user's authoritative `original_scheduled_str` + `original_timezone`
+ * (what they typed into the Upload-Post scheduler); falls back to a defensively-parsed
+ * `scheduled_date`.  Returns `null` if neither is usable.
+ */
+function resolvePostDate(p: ScheduledPost): Date | null {
+  return resolveScheduledInstant(p);
+}
 
 // ---- calendar math ------------------------------------------------------
 type DateParts = { year: number; month: number; day: number };
@@ -88,8 +99,8 @@ function keyFor(year: number, month: number, day: number) {
 function indexEvents(posts: ScheduledPost[]): EventByDay {
   const map: EventByDay = new Map();
   for (const p of posts) {
-    const d = new Date(p.scheduled_date);
-    if (Number.isNaN(d.getTime())) continue;
+    const d = resolvePostDate(p);
+    if (!d) continue;
     const bp = berlinParts(d);
     const key = keyFor(bp.year, bp.month, bp.day);
     const bucket = map.get(key) || [];
@@ -98,9 +109,11 @@ function indexEvents(posts: ScheduledPost[]): EventByDay {
   }
   // sort each day's events by time
   for (const bucket of map.values()) {
-    bucket.sort(
-      (a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime(),
-    );
+    bucket.sort((a, b) => {
+      const da = resolvePostDate(a)?.getTime() ?? 0;
+      const db = resolvePostDate(b)?.getTime() ?? 0;
+      return da - db;
+    });
   }
   return map;
 }
@@ -110,8 +123,8 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
   // Default to the month with the nearest upcoming post, falling back to "today"
   const initial = useMemo(() => {
     const upcoming = posts
-      .map((p) => new Date(p.scheduled_date))
-      .filter((d) => !Number.isNaN(d.getTime()))
+      .map((p) => resolvePostDate(p))
+      .filter((d): d is Date => d !== null)
       .sort((a, b) => a.getTime() - b.getTime());
     const now = new Date();
     const target = upcoming.find((d) => d.getTime() >= now.getTime()) || now;
@@ -125,8 +138,8 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
 
   const postsThisMonth = useMemo(() => {
     return posts.filter((p) => {
-      const d = new Date(p.scheduled_date);
-      if (Number.isNaN(d.getTime())) return false;
+      const d = resolvePostDate(p);
+      if (!d) return false;
       const bp = berlinParts(d);
       return bp.year === cursor.year && bp.month === cursor.month;
     });
@@ -234,10 +247,12 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
                   const primary = (ev.platforms && ev.platforms[0]) || ev.post_type || "post";
                   const tone = platformTone(primary);
                   const title = ev.title || ev.caption || ev.post_type || "Scheduled";
+                  const evInstant = resolvePostDate(ev);
+                  const tzLabel = evInstant ? berlinTzLabel(evInstant) : "";
                   return (
                     <div
                       key={ev.job_id}
-                      title={`${formatBerlinTime(ev.scheduled_date)} ${berlinTzLabel(new Date(ev.scheduled_date))} — ${title}`}
+                      title={`${formatScheduledBerlinTime(ev)} ${tzLabel} — ${title}`}
                       className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] leading-tight"
                       style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}
                     >
@@ -246,7 +261,7 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
                         style={{ background: tone.dot }}
                       />
                       <span className="shrink-0 font-mono text-[10px] opacity-80">
-                        {formatBerlinTime(ev.scheduled_date)}
+                        {formatScheduledBerlinTime(ev)}
                       </span>
                       <span className="truncate">{title}</span>
                     </div>
@@ -276,7 +291,7 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
                 <li key={p.job_id} className="flex items-center gap-3 px-4 py-3">
                   <span className="h-2 w-2 rounded-full" style={{ background: tone.dot }} />
                   <span className="font-mono text-xs text-[#b9a7b6] tabular-nums">
-                    {formatBerlinDateTime(p.scheduled_date)}
+                    {formatScheduledBerlin(p)}
                   </span>
                   <span className="truncate text-sm text-[#f3e7d7]">
                     {p.title || p.caption || "Scheduled post"}
