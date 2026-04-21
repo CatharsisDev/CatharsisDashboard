@@ -16,7 +16,7 @@ import {
   type PostAnalyticsResponse,
 } from "@/lib/uploadpost";
 
-const trackedPlatforms = ["tiktok", "instagram", "x", "youtube"];
+const trackedPlatforms = ["tiktok", "instagram", "x", "youtube", "pinterest"];
 
 function formatDate(value?: string) {
   return formatBerlinDateTime(value);

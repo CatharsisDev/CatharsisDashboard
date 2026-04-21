@@ -75,6 +75,7 @@ const PLATFORM_TONE: Record<string, { dot: string; text: string; bg: string; bor
   x: { dot: "#e8dccc", text: "#f3e7d7", bg: "rgba(232, 220, 204, 0.1)", border: "rgba(232, 220, 204, 0.3)", label: "X" },
   twitter: { dot: "#e8dccc", text: "#f3e7d7", bg: "rgba(232, 220, 204, 0.1)", border: "rgba(232, 220, 204, 0.3)", label: "Twitter" },
   youtube: { dot: "#e88a8a", text: "#f3c3c3", bg: "rgba(232, 138, 138, 0.14)", border: "rgba(232, 138, 138, 0.35)", label: "YouTube" },
+  pinterest: { dot: "#e2585c", text: "#f5b9bb", bg: "rgba(226, 88, 92, 0.16)", border: "rgba(226, 88, 92, 0.38)", label: "Pinterest" },
   facebook: { dot: "#9ab6f0", text: "#d4dffc", bg: "rgba(154, 182, 240, 0.14)", border: "rgba(154, 182, 240, 0.32)", label: "Facebook" },
   linkedin: { dot: "#9ab6f0", text: "#d4dffc", bg: "rgba(154, 182, 240, 0.14)", border: "rgba(154, 182, 240, 0.32)", label: "LinkedIn" },
   threads: { dot: "#c9b9e3", text: "#e6d1f0", bg: "rgba(180, 137, 199, 0.14)", border: "rgba(180, 137, 199, 0.32)", label: "Threads" },
