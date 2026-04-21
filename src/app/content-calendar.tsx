@@ -39,6 +39,48 @@ function monthLabel(year: number, month: number) {
   return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric", timeZone: "UTC" }).format(d);
 }
 
+// ---- date arithmetic on plain {year, month, day} ------------------------
+// All week-grid math is done as pure calendar arithmetic via a UTC Date with
+// no time component — this avoids any DST or zone surprises (we're not asking
+// "what day of the week is this instant in Berlin?", we're just shifting dates
+// on a calendar).  Display formatting is still done via Intl in BERLIN_TZ.
+function ymdToUtc({ year, month, day }: DateParts): Date {
+  return new Date(Date.UTC(year, month - 1, day));
+}
+function utcToYmd(d: Date): DateParts {
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() };
+}
+function addDays(ymd: DateParts, n: number): DateParts {
+  const d = ymdToUtc(ymd);
+  d.setUTCDate(d.getUTCDate() + n);
+  return utcToYmd(d);
+}
+/** Monday=0 .. Sunday=6 (ISO week start). */
+function dowMon0(ymd: DateParts): number {
+  return (ymdToUtc(ymd).getUTCDay() + 6) % 7;
+}
+/** Monday of the ISO week containing `ymd`. */
+function mondayOf(ymd: DateParts): DateParts {
+  return addDays(ymd, -dowMon0(ymd));
+}
+/** "20 – 26 Apr 2026" or "27 Apr – 3 May 2026" style label. */
+function weekRangeLabel(weekStart: DateParts): string {
+  const start = ymdToUtc(weekStart);
+  const end = ymdToUtc(addDays(weekStart, 6));
+  const sameMonth = start.getUTCMonth() === end.getUTCMonth() && start.getUTCFullYear() === end.getUTCFullYear();
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const day = (d: Date) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric" }).format(d);
+  const dayMonth = (d: Date) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short" }).format(d);
+  const dayMonthYear = (d: Date) => new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", day: "numeric", month: "short", year: "numeric" }).format(d);
+  if (sameMonth) {
+    return `${day(start)} – ${dayMonthYear(end)}`;
+  }
+  if (sameYear) {
+    return `${dayMonth(start)} – ${dayMonthYear(end)}`;
+  }
+  return `${dayMonthYear(start)} – ${dayMonthYear(end)}`;
+}
+
 // Build a 6×7 grid (ISO week start = Monday) for the given month.
 function buildMonthGrid(year: number, month: number) {
   // month is 1-12
@@ -179,35 +221,57 @@ function indexEvents(posts: ScheduledPost[]): EventByDay {
   return map;
 }
 
+type CalendarView = "month" | "week";
+
 export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
   const today = useMemo(() => berlinParts(new Date()), []);
-  // Default to the month with the nearest upcoming post, falling back to "today"
-  const initial = useMemo(() => {
+  // Default to the date of the nearest upcoming post, falling back to today.
+  // We store a full {year, month, day} so the same cursor works for both views.
+  const initial = useMemo<DateParts>(() => {
     const upcoming = posts
       .map((p) => resolvePostDate(p))
       .filter((d): d is Date => d !== null)
       .sort((a, b) => a.getTime() - b.getTime());
     const now = new Date();
     const target = upcoming.find((d) => d.getTime() >= now.getTime()) || now;
-    const bp = berlinParts(target);
-    return { year: bp.year, month: bp.month };
+    return berlinParts(target);
   }, [posts]);
-  const [cursor, setCursor] = useState(initial);
+  const [cursor, setCursor] = useState<DateParts>(initial);
+  const [view, setView] = useState<CalendarView>("month");
 
-  const grid = useMemo(() => buildMonthGrid(cursor.year, cursor.month), [cursor]);
   const eventIndex = useMemo(() => indexEvents(posts), [posts]);
 
-  const postsThisMonth = useMemo(() => {
+  // Month-view cell grid.
+  const monthGrid = useMemo(
+    () => buildMonthGrid(cursor.year, cursor.month),
+    [cursor.year, cursor.month],
+  );
+
+  // Week-view: Monday of the week containing the cursor, then seven days.
+  const weekStart = useMemo(() => mondayOf(cursor), [cursor]);
+  const weekDays = useMemo<DateParts[]>(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+
+  // Posts that fall inside the currently visible range.  Month view filters by
+  // year+month; week view by the seven-day window.
+  const visiblePosts = useMemo(() => {
     return posts.filter((p) => {
       const d = resolvePostDate(p);
       if (!d) return false;
       const bp = berlinParts(d);
-      return bp.year === cursor.year && bp.month === cursor.month;
+      if (view === "month") {
+        return bp.year === cursor.year && bp.month === cursor.month;
+      }
+      const startMs = ymdToUtc(weekStart).getTime();
+      const endMs = ymdToUtc(addDays(weekStart, 7)).getTime(); // exclusive
+      const postDayMs = ymdToUtc(bp).getTime();
+      return postDayMs >= startMs && postDayMs < endMs;
     });
-  }, [posts, cursor]);
+  }, [posts, view, cursor, weekStart]);
 
-  // For the legend: collect every platform and every content kind that actually
-  // appears anywhere in the dataset, so we only show relevant chips.
+  // Legend: every platform + content kind that appears anywhere in the dataset.
   const legend = useMemo(() => {
     const platformSeen = new Set<string>();
     const kindSeen = new Set<ContentKind>();
@@ -215,7 +279,6 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
       for (const pl of p.platforms || []) platformSeen.add(pl.toLowerCase());
       kindSeen.add(contentKind(p.post_type));
     }
-    // Stable ordering: kinds in a fixed order, platforms alphabetical.
     const kindOrder: ContentKind[] = ["video", "photo", "text", "other"];
     return {
       kinds: kindOrder.filter((k) => kindSeen.has(k)),
@@ -224,36 +287,79 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
   }, [posts]);
 
   const goPrev = () => {
-    setCursor(({ year, month }) =>
-      month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 },
-    );
+    if (view === "month") {
+      setCursor(({ year, month, day }) =>
+        month === 1 ? { year: year - 1, month: 12, day } : { year, month: month - 1, day },
+      );
+    } else {
+      setCursor((c) => addDays(c, -7));
+    }
   };
   const goNext = () => {
-    setCursor(({ year, month }) =>
-      month === 12 ? { year: year + 1, month: 1 } : { year, month: month + 1 },
-    );
+    if (view === "month") {
+      setCursor(({ year, month, day }) =>
+        month === 12 ? { year: year + 1, month: 1, day } : { year, month: month + 1, day },
+      );
+    } else {
+      setCursor((c) => addDays(c, 7));
+    }
   };
-  const goToday = () => setCursor({ year: today.year, month: today.month });
+  const goToday = () => setCursor({ year: today.year, month: today.month, day: today.day });
 
-  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const weekdayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  const headerTitle =
+    view === "month"
+      ? monthLabel(cursor.year, cursor.month)
+      : weekRangeLabel(weekStart);
+  const headerSub =
+    view === "month"
+      ? `${visiblePosts.length} scheduled · times in Europe/Berlin (${berlinTzLabel(new Date())})`
+      : `${visiblePosts.length} scheduled this week · times in Europe/Berlin (${berlinTzLabel(new Date())})`;
+  const upcomingLabel =
+    view === "month"
+      ? `Upcoming in ${monthLabel(cursor.year, cursor.month)}`
+      : `This week`;
 
   return (
     <div className="card-glass rounded-[2rem] p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="text-[11px] uppercase tracking-[0.28em] text-[#e7b894]/80">Content calendar</div>
-          <h2 className="font-display mt-2 text-3xl sm:text-4xl">
-            {monthLabel(cursor.year, cursor.month)}
-          </h2>
-          <div className="mt-1 text-sm text-[#b9a7b6]">
-            {postsThisMonth.length} scheduled · times in Europe/Berlin ({berlinTzLabel(new Date())})
-          </div>
+          <h2 className="font-display mt-2 text-3xl sm:text-4xl">{headerTitle}</h2>
+          <div className="mt-1 text-sm text-[#b9a7b6]">{headerSub}</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Month / Week segmented toggle */}
+          <div
+            role="group"
+            aria-label="Calendar view"
+            className="soft-pill flex items-center gap-1 rounded-full p-1 text-xs"
+          >
+            {(["month", "week"] as const).map((v) => {
+              const active = view === v;
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setView(v)}
+                  aria-pressed={active}
+                  className={[
+                    "rounded-full px-3 py-1 uppercase tracking-[0.18em] transition",
+                    active
+                      ? "bg-[#e7b894] text-[#2a1220]"
+                      : "text-[#d9c9bc] hover:bg-white/10",
+                  ].join(" ")}
+                >
+                  {v === "month" ? "Month" : "Week"}
+                </button>
+              );
+            })}
+          </div>
           <button
             onClick={goPrev}
             className="soft-pill rounded-full px-3 py-2 text-sm text-[#f3e7d7] transition hover:bg-white/10"
-            aria-label="Previous month"
+            aria-label={view === "month" ? "Previous month" : "Previous week"}
           >
             ‹
           </button>
@@ -266,106 +372,192 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
           <button
             onClick={goNext}
             className="soft-pill rounded-full px-3 py-2 text-sm text-[#f3e7d7] transition hover:bg-white/10"
-            aria-label="Next month"
+            aria-label={view === "month" ? "Next month" : "Next week"}
           >
             ›
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-7 border-t border-l hairline overflow-hidden rounded-2xl">
-        {weekdays.map((w) => (
-          <div
-            key={w}
-            className="border-r border-b hairline bg-white/[0.02] px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-[#b9a7b6]"
-          >
-            {w}
-          </div>
-        ))}
-
-        {grid.map((cell) => {
-          const key = keyFor(cell.year, cell.month, cell.day);
-          const events = eventIndex.get(key) || [];
-          const isToday =
-            cell.year === today.year && cell.month === today.month && cell.day === today.day;
-          const maxShown = 3;
-          const shown = events.slice(0, maxShown);
-          const overflow = events.length - shown.length;
-
-          return (
+      {view === "month" ? (
+        <div className="grid grid-cols-7 border-t border-l hairline overflow-hidden rounded-2xl">
+          {weekdayHeaders.map((w) => (
             <div
-              key={`${key}-${cell.inMonth ? "in" : "out"}`}
-              className={[
-                "border-r border-b hairline px-2 py-2 align-top min-h-[108px] sm:min-h-[124px] flex flex-col gap-1",
-                cell.inMonth ? "bg-transparent" : "bg-black/20 text-[#7a6d7a]",
-              ].join(" ")}
+              key={w}
+              className="border-r border-b hairline bg-white/[0.02] px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-[#b9a7b6]"
             >
-              <div className="flex items-center justify-between">
-                <span
-                  className={[
-                    "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs",
-                    isToday
-                      ? "bg-[#e7b894] font-semibold text-[#2a1220]"
-                      : cell.inMonth
-                        ? "text-[#f3e7d7]"
-                        : "text-[#7a6d7a]",
-                  ].join(" ")}
-                >
-                  {cell.day}
-                </span>
-                {events.length ? (
-                  <span className="text-[10px] uppercase tracking-[0.12em] text-[#b9a7b6]">
-                    {events.length} post{events.length === 1 ? "" : "s"}
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="mt-1 flex flex-col gap-1">
-                {shown.map((ev) => {
-                  const primary = (ev.platforms && ev.platforms[0]) || ev.post_type || "post";
-                  const tone = platformTone(primary);
-                  const title = ev.title || ev.caption || ev.post_type || "Scheduled";
-                  const evInstant = resolvePostDate(ev);
-                  const tzLabel = evInstant ? berlinTzLabel(evInstant) : "";
-                  const kind = contentKind(ev.post_type);
-                  const tonePlatforms = (ev.platforms || [primary])
-                    .map((p) => platformTone(p).label)
-                    .join(", ");
-                  return (
-                    <div
-                      key={ev.job_id}
-                      title={`${formatScheduledBerlinTime(ev)} ${tzLabel} · ${CONTENT_LABEL[kind]} · ${tonePlatforms} — ${title}`}
-                      className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] leading-tight"
-                      style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}
-                    >
-                      <span className="shrink-0" aria-label={`${CONTENT_LABEL[kind]}, ${tonePlatforms}`}>
-                        <ContentIcon kind={kind} color={tone.dot} size={11} />
-                      </span>
-                      <span className="shrink-0 font-mono text-[10px] opacity-80">
-                        {formatScheduledBerlinTime(ev)}
-                      </span>
-                      <span className="truncate">{title}</span>
-                    </div>
-                  );
-                })}
-                {overflow > 0 ? (
-                  <div className="px-1 text-[10px] uppercase tracking-[0.12em] text-[#b9a7b6]">
-                    + {overflow} more
-                  </div>
-                ) : null}
-              </div>
+              {w}
             </div>
-          );
-        })}
-      </div>
+          ))}
 
-      {postsThisMonth.length ? (
+          {monthGrid.map((cell) => {
+            const key = keyFor(cell.year, cell.month, cell.day);
+            const events = eventIndex.get(key) || [];
+            const isToday =
+              cell.year === today.year && cell.month === today.month && cell.day === today.day;
+            const maxShown = 3;
+            const shown = events.slice(0, maxShown);
+            const overflow = events.length - shown.length;
+
+            return (
+              <div
+                key={`${key}-${cell.inMonth ? "in" : "out"}`}
+                className={[
+                  "border-r border-b hairline px-2 py-2 align-top min-h-[108px] sm:min-h-[124px] flex flex-col gap-1",
+                  cell.inMonth ? "bg-transparent" : "bg-black/20 text-[#7a6d7a]",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between">
+                  <span
+                    className={[
+                      "inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs",
+                      isToday
+                        ? "bg-[#e7b894] font-semibold text-[#2a1220]"
+                        : cell.inMonth
+                          ? "text-[#f3e7d7]"
+                          : "text-[#7a6d7a]",
+                    ].join(" ")}
+                  >
+                    {cell.day}
+                  </span>
+                  {events.length ? (
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-[#b9a7b6]">
+                      {events.length} post{events.length === 1 ? "" : "s"}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="mt-1 flex flex-col gap-1">
+                  {shown.map((ev) => {
+                    const primary = (ev.platforms && ev.platforms[0]) || ev.post_type || "post";
+                    const tone = platformTone(primary);
+                    const title = ev.title || ev.caption || ev.post_type || "Scheduled";
+                    const evInstant = resolvePostDate(ev);
+                    const tzLabel = evInstant ? berlinTzLabel(evInstant) : "";
+                    const kind = contentKind(ev.post_type);
+                    const tonePlatforms = (ev.platforms || [primary])
+                      .map((p) => platformTone(p).label)
+                      .join(", ");
+                    return (
+                      <div
+                        key={ev.job_id}
+                        title={`${formatScheduledBerlinTime(ev)} ${tzLabel} · ${CONTENT_LABEL[kind]} · ${tonePlatforms} — ${title}`}
+                        className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] leading-tight"
+                        style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}
+                      >
+                        <span className="shrink-0" aria-label={`${CONTENT_LABEL[kind]}, ${tonePlatforms}`}>
+                          <ContentIcon kind={kind} color={tone.dot} size={11} />
+                        </span>
+                        <span className="shrink-0 font-mono text-[10px] opacity-80">
+                          {formatScheduledBerlinTime(ev)}
+                        </span>
+                        <span className="truncate">{title}</span>
+                      </div>
+                    );
+                  })}
+                  {overflow > 0 ? (
+                    <div className="px-1 text-[10px] uppercase tracking-[0.12em] text-[#b9a7b6]">
+                      + {overflow} more
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Week view: 7 tall day-columns stacked side by side.
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-7">
+          {weekDays.map((day, idx) => {
+            const key = keyFor(day.year, day.month, day.day);
+            const events = eventIndex.get(key) || [];
+            const isToday =
+              day.year === today.year && day.month === today.month && day.day === today.day;
+            return (
+              <div
+                key={key}
+                className="flex min-h-[180px] flex-col rounded-2xl border border-white/5 bg-white/[0.02] p-3"
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-[#b9a7b6]">
+                      {weekdayHeaders[idx]}
+                    </span>
+                    <span
+                      className={[
+                        "inline-flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm",
+                        isToday
+                          ? "bg-[#e7b894] font-semibold text-[#2a1220]"
+                          : "text-[#f3e7d7]",
+                      ].join(" ")}
+                    >
+                      {day.day}
+                    </span>
+                  </div>
+                  {events.length ? (
+                    <span className="text-[10px] uppercase tracking-[0.12em] text-[#b9a7b6]">
+                      {events.length}
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {events.length === 0 ? (
+                    <span className="text-[11px] italic text-[#7a6d7a]">No posts</span>
+                  ) : null}
+                  {events.map((ev) => {
+                    const primary = (ev.platforms && ev.platforms[0]) || ev.post_type || "post";
+                    const tone = platformTone(primary);
+                    const title = ev.title || ev.caption || ev.post_type || "Scheduled";
+                    const evInstant = resolvePostDate(ev);
+                    const tzLabel = evInstant ? berlinTzLabel(evInstant) : "";
+                    const kind = contentKind(ev.post_type);
+                    const tonePlatforms = (ev.platforms || [primary])
+                      .map((p) => platformTone(p).label)
+                      .join(", ");
+                    return (
+                      <div
+                        key={ev.job_id}
+                        title={`${formatScheduledBerlinTime(ev)} ${tzLabel} · ${CONTENT_LABEL[kind]} · ${tonePlatforms} — ${title}`}
+                        className="flex flex-col gap-1 rounded-lg px-2 py-2 text-[11px] leading-tight"
+                        style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="shrink-0" aria-label={`${CONTENT_LABEL[kind]}, ${tonePlatforms}`}>
+                            <ContentIcon kind={kind} color={tone.dot} size={12} />
+                          </span>
+                          <span className="font-mono text-[10px] opacity-80">
+                            {formatScheduledBerlinTime(ev)}
+                          </span>
+                          <span className="ml-auto flex gap-1">
+                            {(ev.platforms || []).slice(0, 3).map((pl) => (
+                              <span
+                                key={pl}
+                                className="h-1.5 w-1.5 rounded-full"
+                                style={{ background: platformTone(pl).dot }}
+                                aria-label={platformTone(pl).label}
+                              />
+                            ))}
+                          </span>
+                        </div>
+                        <div className="line-clamp-2 text-[12px]">{title}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {visiblePosts.length ? (
         <div className="mt-6">
           <div className="mb-3 text-[11px] uppercase tracking-[0.18em] text-[#b9a7b6]">
-            Upcoming in {monthLabel(cursor.year, cursor.month)}
+            {upcomingLabel}
           </div>
           <ul className="divide-y divide-white/5 overflow-hidden rounded-2xl border border-white/5 bg-black/10">
-            {postsThisMonth.slice(0, 6).map((p) => {
+            {visiblePosts.slice(0, 6).map((p) => {
               const primary = (p.platforms && p.platforms[0]) || p.post_type || "post";
               const tone = platformTone(primary);
               const kind = contentKind(p.post_type);
