@@ -131,8 +131,28 @@ const PLATFORM_FALLBACK = {
   label: "Other",
 };
 
+/**
+ * Map any platform string Upload-Post might hand us to a canonical key in
+ * PLATFORM_TONE.  Upload-Post is inconsistent — YouTube can come back as
+ * `youtube`, `youtube_shorts`, `yt`, `yt_shorts`; X/Twitter as `x` or `twitter`;
+ * Instagram sometimes as `ig` or `insta`; etc.  Without normalization, those
+ * variants miss the exact-match lookup and fall through to the fallback amber.
+ */
+function normalizePlatform(p: string): string {
+  const k = p.toLowerCase().trim();
+  if (/^(yt|youtube)([_-].*)?$/.test(k)) return "youtube";
+  if (/^(tt|tiktok)([_-].*)?$/.test(k)) return "tiktok";
+  if (/^(ig|insta(gram)?)([_-].*)?$/.test(k)) return "instagram";
+  if (/^(x|twitter)([_-].*)?$/.test(k)) return "x";
+  if (/^(pin(terest)?)([_-].*)?$/.test(k)) return "pinterest";
+  if (/^(li|linkedin)([_-].*)?$/.test(k)) return "linkedin";
+  if (/^(fb|facebook|meta)([_-].*)?$/.test(k)) return "facebook";
+  if (/^(threads?)([_-].*)?$/.test(k)) return "threads";
+  return k;
+}
+
 function platformTone(platform: string) {
-  return PLATFORM_TONE[platform.toLowerCase()] || PLATFORM_FALLBACK;
+  return PLATFORM_TONE[normalizePlatform(platform)] || PLATFORM_FALLBACK;
 }
 
 // ---- content-type styling -----------------------------------------------
@@ -272,11 +292,13 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
   }, [posts, view, cursor, weekStart]);
 
   // Legend: every platform + content kind that appears anywhere in the dataset.
+  // Platform keys are normalized so `youtube_shorts` collapses into `youtube`,
+  // `twitter` into `x`, etc. — one row per real platform.
   const legend = useMemo(() => {
     const platformSeen = new Set<string>();
     const kindSeen = new Set<ContentKind>();
     for (const p of posts) {
-      for (const pl of p.platforms || []) platformSeen.add(pl.toLowerCase());
+      for (const pl of p.platforms || []) platformSeen.add(normalizePlatform(pl));
       kindSeen.add(contentKind(p.post_type));
     }
     const kindOrder: ContentKind[] = ["video", "photo", "text", "other"];
