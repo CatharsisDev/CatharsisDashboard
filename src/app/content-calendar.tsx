@@ -69,24 +69,84 @@ function buildMonthGrid(year: number, month: number) {
 }
 
 // ---- platform styling ---------------------------------------------------
-const PLATFORM_TONE: Record<string, { dot: string; text: string; bg: string; border: string }> = {
-  tiktok: { dot: "#ffb3c7", text: "#ffd9e3", bg: "rgba(255, 102, 140, 0.16)", border: "rgba(255, 102, 140, 0.35)" },
-  instagram: { dot: "#f7b27a", text: "#ffd7b3", bg: "rgba(247, 154, 90, 0.16)", border: "rgba(247, 154, 90, 0.35)" },
-  x: { dot: "#e8dccc", text: "#f3e7d7", bg: "rgba(232, 220, 204, 0.1)", border: "rgba(232, 220, 204, 0.3)" },
-  twitter: { dot: "#e8dccc", text: "#f3e7d7", bg: "rgba(232, 220, 204, 0.1)", border: "rgba(232, 220, 204, 0.3)" },
-  youtube: { dot: "#e88a8a", text: "#f3c3c3", bg: "rgba(232, 138, 138, 0.14)", border: "rgba(232, 138, 138, 0.35)" },
-  facebook: { dot: "#9ab6f0", text: "#d4dffc", bg: "rgba(154, 182, 240, 0.14)", border: "rgba(154, 182, 240, 0.32)" },
-  linkedin: { dot: "#9ab6f0", text: "#d4dffc", bg: "rgba(154, 182, 240, 0.14)", border: "rgba(154, 182, 240, 0.32)" },
-  threads: { dot: "#c9b9e3", text: "#e6d1f0", bg: "rgba(180, 137, 199, 0.14)", border: "rgba(180, 137, 199, 0.32)" },
+const PLATFORM_TONE: Record<string, { dot: string; text: string; bg: string; border: string; label: string }> = {
+  tiktok: { dot: "#ffb3c7", text: "#ffd9e3", bg: "rgba(255, 102, 140, 0.16)", border: "rgba(255, 102, 140, 0.35)", label: "TikTok" },
+  instagram: { dot: "#f7b27a", text: "#ffd7b3", bg: "rgba(247, 154, 90, 0.16)", border: "rgba(247, 154, 90, 0.35)", label: "Instagram" },
+  x: { dot: "#e8dccc", text: "#f3e7d7", bg: "rgba(232, 220, 204, 0.1)", border: "rgba(232, 220, 204, 0.3)", label: "X" },
+  twitter: { dot: "#e8dccc", text: "#f3e7d7", bg: "rgba(232, 220, 204, 0.1)", border: "rgba(232, 220, 204, 0.3)", label: "Twitter" },
+  youtube: { dot: "#e88a8a", text: "#f3c3c3", bg: "rgba(232, 138, 138, 0.14)", border: "rgba(232, 138, 138, 0.35)", label: "YouTube" },
+  facebook: { dot: "#9ab6f0", text: "#d4dffc", bg: "rgba(154, 182, 240, 0.14)", border: "rgba(154, 182, 240, 0.32)", label: "Facebook" },
+  linkedin: { dot: "#9ab6f0", text: "#d4dffc", bg: "rgba(154, 182, 240, 0.14)", border: "rgba(154, 182, 240, 0.32)", label: "LinkedIn" },
+  threads: { dot: "#c9b9e3", text: "#e6d1f0", bg: "rgba(180, 137, 199, 0.14)", border: "rgba(180, 137, 199, 0.32)", label: "Threads" },
+};
+
+const PLATFORM_FALLBACK = {
+  dot: "#e7b894",
+  text: "#f3d9bc",
+  bg: "rgba(231, 184, 148, 0.14)",
+  border: "rgba(231, 184, 148, 0.3)",
+  label: "Other",
 };
 
 function platformTone(platform: string) {
-  return PLATFORM_TONE[platform.toLowerCase()] || {
-    dot: "#e7b894",
-    text: "#f3d9bc",
-    bg: "rgba(231, 184, 148, 0.14)",
-    border: "rgba(231, 184, 148, 0.3)",
-  };
+  return PLATFORM_TONE[platform.toLowerCase()] || PLATFORM_FALLBACK;
+}
+
+// ---- content-type styling -----------------------------------------------
+// The chip's *shape* encodes what kind of content it is (video / photo / text),
+// while its *color* encodes the platform.  That way the user gets both axes of
+// information at a glance.
+type ContentKind = "video" | "photo" | "text" | "other";
+
+function contentKind(postType: string | undefined): ContentKind {
+  const t = (postType || "").toLowerCase();
+  if (/video|reel|short|tiktok|mp4|mov|clip/.test(t)) return "video";
+  if (/photo|image|img|picture|carousel|story|png|jpg|jpeg/.test(t)) return "photo";
+  if (/text|tweet|caption|post$|status|thread/.test(t)) return "text";
+  return "other";
+}
+
+const CONTENT_LABEL: Record<ContentKind, string> = {
+  video: "Video",
+  photo: "Photo",
+  text: "Text",
+  other: "Other",
+};
+
+function ContentIcon({ kind, color, size = 12 }: { kind: ContentKind; color: string; size?: number }) {
+  const s = size;
+  const common = { width: s, height: s, viewBox: "0 0 12 12" as const };
+  if (kind === "video") {
+    return (
+      <svg {...common} aria-hidden>
+        <polygon points="3,2 10,6 3,10" fill={color} />
+      </svg>
+    );
+  }
+  if (kind === "photo") {
+    return (
+      <svg {...common} aria-hidden>
+        <rect x="1.4" y="2.4" width="9.2" height="7.2" rx="1.4" fill="none" stroke={color} strokeWidth="1.4" />
+        <circle cx="4.3" cy="5.3" r="0.9" fill={color} />
+        <path d="M1.8 9 L5 6.2 L7.4 8 L10.2 5.6" fill="none" stroke={color} strokeWidth="1.2" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === "text") {
+    return (
+      <svg {...common} aria-hidden>
+        <line x1="1.8" y1="3.2" x2="10.2" y2="3.2" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+        <line x1="1.8" y1="6" x2="10.2" y2="6" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+        <line x1="1.8" y1="8.8" x2="7" y2="8.8" stroke={color} strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  // other → small filled dot
+  return (
+    <svg {...common} aria-hidden>
+      <circle cx="6" cy="6" r="2.6" fill={color} />
+    </svg>
+  );
 }
 
 // ---- component ----------------------------------------------------------
@@ -144,6 +204,23 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
       return bp.year === cursor.year && bp.month === cursor.month;
     });
   }, [posts, cursor]);
+
+  // For the legend: collect every platform and every content kind that actually
+  // appears anywhere in the dataset, so we only show relevant chips.
+  const legend = useMemo(() => {
+    const platformSeen = new Set<string>();
+    const kindSeen = new Set<ContentKind>();
+    for (const p of posts) {
+      for (const pl of p.platforms || []) platformSeen.add(pl.toLowerCase());
+      kindSeen.add(contentKind(p.post_type));
+    }
+    // Stable ordering: kinds in a fixed order, platforms alphabetical.
+    const kindOrder: ContentKind[] = ["video", "photo", "text", "other"];
+    return {
+      kinds: kindOrder.filter((k) => kindSeen.has(k)),
+      platforms: Array.from(platformSeen).sort(),
+    };
+  }, [posts]);
 
   const goPrev = () => {
     setCursor(({ year, month }) =>
@@ -249,17 +326,20 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
                   const title = ev.title || ev.caption || ev.post_type || "Scheduled";
                   const evInstant = resolvePostDate(ev);
                   const tzLabel = evInstant ? berlinTzLabel(evInstant) : "";
+                  const kind = contentKind(ev.post_type);
+                  const tonePlatforms = (ev.platforms || [primary])
+                    .map((p) => platformTone(p).label)
+                    .join(", ");
                   return (
                     <div
                       key={ev.job_id}
-                      title={`${formatScheduledBerlinTime(ev)} ${tzLabel} — ${title}`}
+                      title={`${formatScheduledBerlinTime(ev)} ${tzLabel} · ${CONTENT_LABEL[kind]} · ${tonePlatforms} — ${title}`}
                       className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11px] leading-tight"
                       style={{ background: tone.bg, border: `1px solid ${tone.border}`, color: tone.text }}
                     >
-                      <span
-                        className="h-1.5 w-1.5 shrink-0 rounded-full"
-                        style={{ background: tone.dot }}
-                      />
+                      <span className="shrink-0" aria-label={`${CONTENT_LABEL[kind]}, ${tonePlatforms}`}>
+                        <ContentIcon kind={kind} color={tone.dot} size={11} />
+                      </span>
                       <span className="shrink-0 font-mono text-[10px] opacity-80">
                         {formatScheduledBerlinTime(ev)}
                       </span>
@@ -287,9 +367,12 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
             {postsThisMonth.slice(0, 6).map((p) => {
               const primary = (p.platforms && p.platforms[0]) || p.post_type || "post";
               const tone = platformTone(primary);
+              const kind = contentKind(p.post_type);
               return (
                 <li key={p.job_id} className="flex items-center gap-3 px-4 py-3">
-                  <span className="h-2 w-2 rounded-full" style={{ background: tone.dot }} />
+                  <span className="shrink-0" aria-label={CONTENT_LABEL[kind]}>
+                    <ContentIcon kind={kind} color={tone.dot} size={12} />
+                  </span>
                   <span className="font-mono text-xs text-[#b9a7b6] tabular-nums">
                     {formatScheduledBerlin(p)}
                   </span>
@@ -315,6 +398,49 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
               );
             })}
           </ul>
+        </div>
+      ) : null}
+
+      {legend.kinds.length || legend.platforms.length ? (
+        <div className="mt-6 rounded-2xl border border-white/5 bg-black/10 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[11px] text-[#b9a7b6]">
+            {legend.kinds.length ? (
+              <div className="flex items-center gap-3">
+                <span className="uppercase tracking-[0.18em] text-[#e7b894]/80">Content</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  {legend.kinds.map((k) => (
+                    <span key={k} className="inline-flex items-center gap-1.5 text-[#d9c9bc]">
+                      <ContentIcon kind={k} color="#e7b894" size={12} />
+                      {CONTENT_LABEL[k]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {legend.platforms.length ? (
+              <div className="flex items-center gap-3">
+                <span className="uppercase tracking-[0.18em] text-[#e7b894]/80">Platform</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  {legend.platforms.map((pl) => {
+                    const t = platformTone(pl);
+                    return (
+                      <span key={pl} className="inline-flex items-center gap-1.5 text-[#d9c9bc]">
+                        <span
+                          className="inline-block h-2.5 w-2.5 rounded-full"
+                          style={{ background: t.dot }}
+                          aria-hidden
+                        />
+                        {t.label}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+            <span className="ml-auto hidden text-[10px] uppercase tracking-[0.18em] text-[#7a6d7a] sm:inline">
+              Shape = content · Color = platform
+            </span>
+          </div>
         </div>
       ) : null}
     </div>
