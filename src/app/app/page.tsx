@@ -1,20 +1,51 @@
 import Link from "next/link";
 import { getProvider } from "@/lib/analytics";
 import type {
+  ActiveDevicesSummary,
   AppMeta,
   AppSnapshot,
+  AppVersionStat,
+  DeviceStat,
+  FinanceSummary,
+  FunnelSummary,
+  IapSummary,
+  MoneyAmount,
   PerformanceMetric,
   RatingsSummary,
+  RetentionCohort,
   Review,
+  SearchTermStat,
+  SourceStat,
+  SubscriptionsSummary,
+  TerritoryStat,
+  TestFlightSummary,
   TimeSeriesStats,
 } from "@/lib/analytics/types";
 import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
 
 export const dynamic = "force-dynamic";
 
-// ---- small helpers ------------------------------------------------------
+// ---- formatting helpers -------------------------------------------------
 function formatNumber(v: number) {
   return new Intl.NumberFormat("en-GB").format(Math.round(v));
+}
+
+function formatPercent(v: number | undefined, digits = 1) {
+  if (typeof v !== "number" || !Number.isFinite(v)) return "—";
+  return `${(v * 100).toFixed(digits)}%`;
+}
+
+function formatMoney(m: MoneyAmount | undefined): string {
+  if (!m || !Number.isFinite(m.amount)) return "—";
+  try {
+    return new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency: m.currency,
+      maximumFractionDigits: Math.abs(m.amount) < 100 ? 2 : 0,
+    }).format(m.amount);
+  } catch {
+    return `${m.amount.toFixed(2)} ${m.currency}`;
+  }
 }
 
 function formatReviewDate(value: string) {
@@ -43,7 +74,32 @@ function MetricTile({ label, value, sub }: { label: string; value: string; sub?:
   );
 }
 
-// ---- installs bar chart (inline SVG, no deps) ---------------------------
+function SectionHeader({ title, note }: { title: string; note?: string }) {
+  return (
+    <div className="flex items-end justify-between gap-4 border-b border-white/5 pb-2">
+      <h2 className="font-display text-2xl text-[#f3e7d7]">{title}</h2>
+      {note ? <span className="text-[10px] uppercase tracking-[0.2em] text-[#8f7d8c]">{note}</span> : null}
+    </div>
+  );
+}
+
+function EmptyNote({ children }: { children: React.ReactNode }) {
+  return <div className="mt-3 text-sm text-[#b9a7b6]">{children}</div>;
+}
+
+function Panel({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
+  return (
+    <div className="card-glass rounded-3xl p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">{title}</div>
+        {note ? <span className="text-[10px] text-[#8f7d8c]">{note}</span> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ---- charts -------------------------------------------------------------
 function InstallsChart({ data }: { data: TimeSeriesStats }) {
   const max = Math.max(1, ...data.points.map((p) => p.value));
   const BAR_W = 28;
@@ -102,7 +158,40 @@ function InstallsChart({ data }: { data: TimeSeriesStats }) {
   );
 }
 
-// ---- sections -----------------------------------------------------------
+function ShareBar({
+  label,
+  value,
+  total,
+  hint,
+}: {
+  label: string;
+  value: number;
+  total: number;
+  hint?: string;
+}) {
+  const pct = total > 0 ? (value / total) * 100 : 0;
+  return (
+    <div className="mb-1 flex items-center gap-2 text-xs text-[#d9c9bc]">
+      <span className="w-32 truncate" title={label}>
+        {label}
+      </span>
+      <div className="relative h-2 flex-1 overflow-hidden rounded-full bg-white/5">
+        <div
+          className="absolute inset-y-0 left-0 rounded-full"
+          style={{
+            width: `${Math.min(100, pct)}%`,
+            background: "linear-gradient(90deg, #e7b894, #b489c7)",
+          }}
+        />
+      </div>
+      <span className="w-14 text-right font-mono tabular-nums text-[#b9a7b6]">
+        {hint ?? formatNumber(value)}
+      </span>
+    </div>
+  );
+}
+
+// ---- header + overview --------------------------------------------------
 function AppHeader({ app, platformName }: { app: AppMeta; platformName: string }) {
   const initial = app.name.charAt(0).toUpperCase();
   return (
@@ -125,20 +214,19 @@ function AppHeader({ app, platformName }: { app: AppMeta; platformName: string }
   );
 }
 
+// ---- ratings ------------------------------------------------------------
 function RatingsPanel({ ratings }: { ratings: RatingsSummary | undefined }) {
   if (!ratings) {
     return (
-      <div className="card-glass rounded-3xl p-6">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">Ratings</div>
-        <div className="mt-3 text-[#b9a7b6]">No ratings yet. They&rsquo;ll appear here once reviewers start arriving.</div>
-      </div>
+      <Panel title="Ratings">
+        <EmptyNote>No ratings yet. They&rsquo;ll appear here once reviewers start arriving.</EmptyNote>
+      </Panel>
     );
   }
   const distribution = ratings.distribution;
   const max = distribution ? Math.max(1, ...Object.values(distribution)) : 1;
   return (
-    <div className="card-glass rounded-3xl p-6">
-      <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">Ratings</div>
+    <Panel title="Ratings" note="sampled from newest reviews">
       <div className="mt-4 flex flex-wrap items-end gap-6">
         <div>
           <div className="font-display text-6xl text-[#fff3e0]">{ratings.average.toFixed(1)}</div>
@@ -174,10 +262,503 @@ function RatingsPanel({ ratings }: { ratings: RatingsSummary | undefined }) {
           </div>
         ) : null}
       </div>
-    </div>
+    </Panel>
   );
 }
 
+// ---- installs -----------------------------------------------------------
+function InstallsPanel({ installs }: { installs: TimeSeriesStats | undefined }) {
+  if (!installs) {
+    return (
+      <Panel title="Installs">
+        <EmptyNote>
+          Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> to enable daily download counts from the Sales &amp; Trends API.
+        </EmptyNote>
+      </Panel>
+    );
+  }
+  const avg = installs.total / Math.max(1, installs.points.length);
+  return (
+    <Panel title="Installs" note="Sales & Trends · daily">
+      <div className="font-display mt-2 text-4xl">{formatNumber(installs.total)}</div>
+      <div className="mt-1 text-xs text-[#b9a7b6]">
+        last {installs.points.length} days · avg {formatNumber(avg)}/day
+      </div>
+      <div className="mt-5">
+        <InstallsChart data={installs} />
+      </div>
+    </Panel>
+  );
+}
+
+// ---- financial ----------------------------------------------------------
+function FinancePanel({ finance, iap }: { finance?: FinanceSummary; iap?: IapSummary }) {
+  if (!finance && !iap) {
+    return (
+      <Panel title="Financial">
+        <EmptyNote>
+          No revenue data yet. Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> and wait for Apple to process a daily report.
+        </EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Financial" note="last 7 days">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <MetricTile label="Developer proceeds" value={formatMoney(finance?.proceeds)} />
+        <MetricTile label="Refunds" value={formatMoney(finance?.refunds)} />
+        <MetricTile
+          label="Paid downloads"
+          value={finance?.paidDownloads !== undefined ? formatNumber(finance.paidDownloads) : "—"}
+        />
+        <MetricTile
+          label="Free downloads"
+          value={finance?.freeDownloads !== undefined ? formatNumber(finance.freeDownloads) : "—"}
+        />
+        <MetricTile
+          label="App updates"
+          value={finance?.updates !== undefined ? formatNumber(finance.updates) : "—"}
+        />
+        <MetricTile
+          label="Redownloads"
+          value={finance?.redownloads !== undefined ? formatNumber(finance.redownloads) : "—"}
+        />
+        <MetricTile
+          label="IAP units"
+          value={iap?.totalUnits !== undefined ? formatNumber(iap.totalUnits) : "—"}
+        />
+        <MetricTile label="IAP proceeds" value={formatMoney(iap?.totalProceeds)} />
+      </div>
+      {finance?.proceedsByCurrency?.length ? (
+        <div className="mt-4 text-xs text-[#b9a7b6]">
+          <span className="font-medium text-[#d9c9bc]">Storefront currencies: </span>
+          {finance.proceedsByCurrency.map((c, i) => (
+            <span key={c.currency}>
+              {i > 0 ? " · " : ""}
+              {formatMoney(c)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {finance?.note ? (
+        <div className="mt-2 text-[11px] text-[#8f7d8c]">{finance.note}</div>
+      ) : null}
+    </Panel>
+  );
+}
+
+// ---- funnel -------------------------------------------------------------
+function FunnelPanel({ funnel }: { funnel: FunnelSummary | undefined }) {
+  if (!funnel || (!funnel.impressions && !funnel.productPageViews && !funnel.firstTimeDownloads)) {
+    return (
+      <Panel title="Funnel · store discovery → page views → first-time downloads">
+        <EmptyNote>
+          Funnel data is fetched from the App Store Connect Analytics Reports API. The first daily reports arrive ~24h after the ongoing report request is created — reload tomorrow.
+        </EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Funnel" note="Analytics Reports · 7 days">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <MetricTile
+          label="Impressions"
+          value={funnel.impressions !== undefined ? formatNumber(funnel.impressions) : "—"}
+        />
+        <MetricTile
+          label="Product page views"
+          value={funnel.productPageViews !== undefined ? formatNumber(funnel.productPageViews) : "—"}
+        />
+        <MetricTile
+          label="First-time downloads"
+          value={
+            funnel.firstTimeDownloads !== undefined ? formatNumber(funnel.firstTimeDownloads) : "—"
+          }
+        />
+        <MetricTile
+          label="Conversion rate"
+          value={formatPercent(funnel.conversionRate, 2)}
+          sub="downloads ÷ impressions"
+        />
+      </div>
+    </Panel>
+  );
+}
+
+// ---- geography ----------------------------------------------------------
+function TerritoriesPanel({ territories }: { territories: TerritoryStat[] | undefined }) {
+  if (!territories || !territories.length) {
+    return (
+      <Panel title="Territories">
+        <EmptyNote>No territory breakdown available for this window.</EmptyNote>
+      </Panel>
+    );
+  }
+  const top = territories.slice(0, 12);
+  const total = top.reduce((s, t) => s + t.units, 0);
+  return (
+    <Panel title="Territories" note="Sales & Trends · top 12">
+      <div className="mt-3">
+        {top.map((t) => (
+          <ShareBar
+            key={t.territory}
+            label={`${t.territory}${t.proceeds ? ` · ${formatMoney(t.proceeds)}` : ""}`}
+            value={t.units}
+            total={total || 1}
+          />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// ---- devices ------------------------------------------------------------
+function DevicesPanel({ devices }: { devices: DeviceStat[] | undefined }) {
+  if (!devices || !devices.length) {
+    return (
+      <Panel title="Devices">
+        <EmptyNote>Device breakdown not available for this window.</EmptyNote>
+      </Panel>
+    );
+  }
+  const total = devices.reduce((s, d) => s + d.units, 0) || 1;
+  return (
+    <Panel title="Devices" note="Sales & Trends">
+      <div className="mt-3">
+        {devices.slice(0, 10).map((d) => (
+          <ShareBar
+            key={d.device}
+            label={d.device}
+            value={d.units}
+            total={total}
+            hint={`${formatNumber(d.units)} · ${formatPercent(d.share)}`}
+          />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// ---- sources ------------------------------------------------------------
+function SourcesPanel({ sources }: { sources: SourceStat[] | undefined }) {
+  if (!sources || !sources.length) {
+    return (
+      <Panel title="Traffic sources">
+        <EmptyNote>
+          Source breakdown (search vs browse vs web referrer) comes from the Analytics Reports API.
+        </EmptyNote>
+      </Panel>
+    );
+  }
+  const total = sources.reduce((s, x) => s + x.units, 0) || 1;
+  return (
+    <Panel title="Traffic sources" note="Analytics Reports · page views">
+      <div className="mt-3">
+        {sources.map((s) => (
+          <ShareBar
+            key={s.source}
+            label={s.source}
+            value={s.units}
+            total={total}
+            hint={`${formatNumber(s.units)} · ${formatPercent(s.share)}`}
+          />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// ---- subscriptions ------------------------------------------------------
+function SubscriptionsPanel({ subs }: { subs: SubscriptionsSummary | undefined }) {
+  if (!subs || !subs.groups.length) {
+    return (
+      <Panel title="Subscriptions">
+        <EmptyNote>
+          No subscription reports yet. This panel will populate once Apple processes daily subscription reports.
+        </EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Subscriptions" note="Sales & Trends · snapshot + 7d events">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <MetricTile
+          label="Active subscribers"
+          value={subs.totalActive !== undefined ? formatNumber(subs.totalActive) : "—"}
+        />
+        <MetricTile label="Subscription proceeds" value={formatMoney(subs.totalProceeds)} />
+      </div>
+      <div className="mt-5 overflow-x-auto">
+        <table className="w-full min-w-[640px] border-collapse text-left text-sm text-[#d9c9bc]">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
+            <tr>
+              <th className="py-2 pr-4">Group</th>
+              <th className="py-2 pr-4">Active</th>
+              <th className="py-2 pr-4">New</th>
+              <th className="py-2 pr-4">Renewals</th>
+              <th className="py-2 pr-4">Cancels</th>
+              <th className="py-2 pr-4">Churn</th>
+              <th className="py-2 pr-4">Proceeds</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subs.groups.map((g) => (
+              <tr key={g.groupName} className="border-t border-white/5">
+                <td className="py-2 pr-4">{g.groupName}</td>
+                <td className="py-2 pr-4 font-mono">
+                  {g.activeSubscribers !== undefined ? formatNumber(g.activeSubscribers) : "—"}
+                </td>
+                <td className="py-2 pr-4 font-mono">
+                  {g.newSubscriptions !== undefined ? formatNumber(g.newSubscriptions) : "—"}
+                </td>
+                <td className="py-2 pr-4 font-mono">
+                  {g.renewals !== undefined ? formatNumber(g.renewals) : "—"}
+                </td>
+                <td className="py-2 pr-4 font-mono">
+                  {g.cancellations !== undefined ? formatNumber(g.cancellations) : "—"}
+                </td>
+                <td className="py-2 pr-4 font-mono">{formatPercent(g.churnRate)}</td>
+                <td className="py-2 pr-4 font-mono">{formatMoney(g.proceeds)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+// ---- IAP ----------------------------------------------------------------
+function IapPanel({ iap }: { iap: IapSummary | undefined }) {
+  if (!iap || !iap.products.length) {
+    return (
+      <Panel title="In-app purchases">
+        <EmptyNote>No IAP activity in the last 7 days.</EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="In-app purchases" note="Sales & Trends · 7 days">
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[520px] border-collapse text-left text-sm text-[#d9c9bc]">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
+            <tr>
+              <th className="py-2 pr-4">SKU</th>
+              <th className="py-2 pr-4">Name</th>
+              <th className="py-2 pr-4">Units</th>
+              <th className="py-2 pr-4">Proceeds</th>
+            </tr>
+          </thead>
+          <tbody>
+            {iap.products.slice(0, 25).map((p) => (
+              <tr key={p.sku} className="border-t border-white/5">
+                <td className="py-2 pr-4 font-mono">{p.sku}</td>
+                <td className="py-2 pr-4">{p.name || "—"}</td>
+                <td className="py-2 pr-4 font-mono">{formatNumber(p.units)}</td>
+                <td className="py-2 pr-4 font-mono">{formatMoney(p.proceeds)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+// ---- search terms -------------------------------------------------------
+function SearchTermsPanel({ terms }: { terms: SearchTermStat[] | undefined }) {
+  if (!terms || !terms.length) {
+    return (
+      <Panel title="Search terms">
+        <EmptyNote>
+          Search term data comes from the Analytics Reports API and can take 24h+ after the request is created.
+        </EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Search terms" note="Analytics Reports · top 20">
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[520px] border-collapse text-left text-sm text-[#d9c9bc]">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
+            <tr>
+              <th className="py-2 pr-4">Term</th>
+              <th className="py-2 pr-4">Impressions</th>
+              <th className="py-2 pr-4">Page views</th>
+              <th className="py-2 pr-4">Downloads</th>
+            </tr>
+          </thead>
+          <tbody>
+            {terms.slice(0, 20).map((t) => (
+              <tr key={t.term} className="border-t border-white/5">
+                <td className="py-2 pr-4">{t.term}</td>
+                <td className="py-2 pr-4 font-mono">{formatNumber(t.impressions || 0)}</td>
+                <td className="py-2 pr-4 font-mono">{formatNumber(t.pageViews || 0)}</td>
+                <td className="py-2 pr-4 font-mono">{formatNumber(t.downloads || 0)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+// ---- active devices -----------------------------------------------------
+function ActiveDevicesPanel({ active }: { active: ActiveDevicesSummary | undefined }) {
+  if (!active) {
+    return (
+      <Panel title="Active devices">
+        <EmptyNote>Active devices data not yet available.</EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Active devices" note="Analytics Reports · Sessions">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <MetricTile
+          label="Daily active"
+          value={active.daily !== undefined ? formatNumber(active.daily) : "—"}
+        />
+        <MetricTile
+          label="Weekly active"
+          value={active.weekly !== undefined ? formatNumber(active.weekly) : "—"}
+        />
+        <MetricTile
+          label="Monthly active"
+          value={active.monthly !== undefined ? formatNumber(active.monthly) : "—"}
+        />
+        <MetricTile
+          label="Sessions / device"
+          value={
+            typeof active.sessionsPerDevice === "number"
+              ? active.sessionsPerDevice.toFixed(2)
+              : "—"
+          }
+        />
+      </div>
+    </Panel>
+  );
+}
+
+// ---- retention ----------------------------------------------------------
+function RetentionPanel({ retention }: { retention: RetentionCohort[] | undefined }) {
+  if (!retention || !retention.length) {
+    return (
+      <Panel title="Retention">
+        <EmptyNote>Retention cohorts not available yet.</EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Retention" note="Analytics Reports · cohort view">
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[420px] border-collapse text-left text-sm text-[#d9c9bc]">
+          <thead className="text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
+            <tr>
+              <th className="py-2 pr-4">Cohort</th>
+              <th className="py-2 pr-4">Day 1</th>
+              <th className="py-2 pr-4">Day 7</th>
+              <th className="py-2 pr-4">Day 28</th>
+            </tr>
+          </thead>
+          <tbody>
+            {retention.slice(-10).map((c) => (
+              <tr key={c.cohortDate} className="border-t border-white/5">
+                <td className="py-2 pr-4 font-mono">{c.cohortDate}</td>
+                <td className="py-2 pr-4 font-mono">{formatPercent(c.day1)}</td>
+                <td className="py-2 pr-4 font-mono">{formatPercent(c.day7)}</td>
+                <td className="py-2 pr-4 font-mono">{formatPercent(c.day28)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+// ---- app versions -------------------------------------------------------
+function AppVersionsPanel({ versions }: { versions: AppVersionStat[] | undefined }) {
+  if (!versions || !versions.length) {
+    return (
+      <Panel title="App versions">
+        <EmptyNote>Version adoption data not yet available.</EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="App versions" note="Analytics Reports · active device share">
+      <div className="mt-3">
+        {versions.slice(0, 12).map((v) => (
+          <ShareBar
+            key={v.version}
+            label={v.version}
+            value={v.adoption || 0}
+            total={1}
+            hint={formatPercent(v.adoption)}
+          />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+// ---- TestFlight ---------------------------------------------------------
+function TestFlightPanel({ tf }: { tf: TestFlightSummary | undefined }) {
+  if (!tf) {
+    return (
+      <Panel title="TestFlight">
+        <EmptyNote>No TestFlight builds or testers visible to this API key.</EmptyNote>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="TestFlight" note="recent builds + tester counts">
+      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-3">
+        <MetricTile
+          label="Internal testers"
+          value={tf.internalTesters !== undefined ? formatNumber(tf.internalTesters) : "—"}
+        />
+        <MetricTile
+          label="External testers"
+          value={tf.externalTesters !== undefined ? formatNumber(tf.externalTesters) : "—"}
+        />
+        <MetricTile label="Builds shown" value={formatNumber(tf.builds.length)} />
+      </div>
+      {tf.builds.length ? (
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full min-w-[520px] border-collapse text-left text-sm text-[#d9c9bc]">
+            <thead className="text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
+              <tr>
+                <th className="py-2 pr-4">Version</th>
+                <th className="py-2 pr-4">Build</th>
+                <th className="py-2 pr-4">Uploaded</th>
+                <th className="py-2 pr-4">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tf.builds.slice(0, 15).map((b) => (
+                <tr key={`${b.version}-${b.buildNumber}`} className="border-t border-white/5">
+                  <td className="py-2 pr-4 font-mono">{b.version}</td>
+                  <td className="py-2 pr-4 font-mono">{b.buildNumber}</td>
+                  <td className="py-2 pr-4 font-mono text-xs">
+                    {b.uploadedDate ? formatBerlinDateTime(b.uploadedDate) : "—"}
+                  </td>
+                  <td className="py-2 pr-4 font-mono text-xs">
+                    {b.expired ? "expired" : b.processingState || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+// ---- performance --------------------------------------------------------
 function PerformancePanel({
   metrics,
   crashes,
@@ -187,21 +768,16 @@ function PerformancePanel({
 }) {
   if ((!metrics || !metrics.length) && !crashes) {
     return (
-      <div className="card-glass rounded-3xl p-6">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">Performance</div>
-        <div className="mt-3 text-[#b9a7b6]">
+      <Panel title="Performance">
+        <EmptyNote>
           Apple only publishes perf &amp; power metrics once the app has enough active devices. Check back after more installs.
-        </div>
-      </div>
+        </EmptyNote>
+      </Panel>
     );
   }
   const headline: PerformanceMetric[] = (metrics || []).slice(0, 8);
   return (
-    <div className="card-glass rounded-3xl p-6">
-      <div className="flex items-center justify-between">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">Performance</div>
-        <span className="text-xs text-[#b9a7b6]">iPhone · all devices</span>
-      </div>
+    <Panel title="Performance" note="iPhone · all devices">
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {headline.map((m) => (
           <MetricTile
@@ -233,48 +809,17 @@ function PerformancePanel({
           {crashes.note ? <div className="mt-2 text-[#8f7d8c]">{crashes.note}</div> : null}
         </div>
       ) : null}
-    </div>
+    </Panel>
   );
 }
 
-function InstallsPanel({ installs }: { installs: TimeSeriesStats | undefined }) {
-  if (!installs) {
-    return (
-      <div className="card-glass rounded-3xl p-6">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">Installs</div>
-        <div className="mt-3 text-[#b9a7b6]">
-          Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> to enable daily download counts from the Sales &amp; Trends API.
-        </div>
-      </div>
-    );
-  }
-  const avg = installs.total / Math.max(1, installs.points.length);
-  return (
-    <div className="card-glass rounded-3xl p-6">
-      <div className="flex items-end justify-between">
-        <div>
-          <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">Installs</div>
-          <div className="font-display mt-2 text-4xl">{formatNumber(installs.total)}</div>
-          <div className="mt-1 text-xs text-[#b9a7b6]">
-            last {installs.points.length} days · avg {formatNumber(avg)}/day
-          </div>
-        </div>
-        <div className="text-right text-xs text-[#8f7d8c]">via Sales &amp; Trends · daily</div>
-      </div>
-      <div className="mt-5">
-        <InstallsChart data={installs} />
-      </div>
-    </div>
-  );
-}
-
+// ---- reviews ------------------------------------------------------------
 function ReviewsPanel({ reviews }: { reviews: Review[] }) {
   if (!reviews.length) {
     return (
-      <div className="card-glass rounded-3xl p-6">
-        <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">Reviews</div>
-        <div className="mt-3 text-[#b9a7b6]">No reviews yet.</div>
-      </div>
+      <Panel title="Reviews">
+        <EmptyNote>No reviews yet.</EmptyNote>
+      </Panel>
     );
   }
   return (
@@ -313,6 +858,7 @@ function ReviewsPanel({ reviews }: { reviews: Review[] }) {
   );
 }
 
+// ---- setup state --------------------------------------------------------
 function SetupState() {
   return (
     <main className="min-h-screen text-[#f3e7d7]">
@@ -341,7 +887,7 @@ function SetupState() {
               <span className="font-mono text-[#f3d9bc]">APPSTORE_APP_ID</span> <span className="text-[#8f7d8c]">(optional)</span> — the numeric Apple ID for a specific app. If not set, the first app returned by the API is used.
             </li>
             <li>
-              <span className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</span> <span className="text-[#8f7d8c]">(optional)</span> — enables daily install counts from the Sales &amp; Trends API.
+              <span className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</span> <span className="text-[#8f7d8c]">(optional)</span> — enables Sales &amp; Trends data: installs, proceeds, refunds, territories, device split, IAP, subscriptions.
             </li>
           </ul>
           <div className="mt-8">
@@ -386,11 +932,11 @@ export default async function AppAnalyticsPage() {
 
   return (
     <main className="min-h-screen text-[#f3e7d7]">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 py-10">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10">
         {snapshot ? (
           <header className="card-glass rounded-[2rem] p-8 sm:p-10">
             <AppHeader app={snapshot.app} platformName={provider.displayName} />
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+            <div className="mt-6 grid gap-4 md:grid-cols-4">
               <MetricTile
                 label="Average rating"
                 value={snapshot.ratings ? snapshot.ratings.average.toFixed(2) : "—"}
@@ -401,14 +947,27 @@ export default async function AppAnalyticsPage() {
                 }
               />
               <MetricTile
-                label="Installs (last 7d)"
+                label="Installs (7d)"
                 value={snapshot.installs ? formatNumber(snapshot.installs.total) : "—"}
                 sub={snapshot.installs ? "Sales & Trends" : "vendor # not set"}
               />
               <MetricTile
-                label="Warnings"
-                value={String(snapshot.warnings.length)}
-                sub="see below"
+                label="Proceeds (7d)"
+                value={formatMoney(snapshot.finance?.proceeds)}
+                sub={snapshot.finance?.proceeds ? "developer proceeds" : "no sales data"}
+              />
+              <MetricTile
+                label="Active subscribers"
+                value={
+                  snapshot.subscriptions?.totalActive !== undefined
+                    ? formatNumber(snapshot.subscriptions.totalActive)
+                    : "—"
+                }
+                sub={
+                  snapshot.subscriptions?.totalProceeds
+                    ? `proceeds ${formatMoney(snapshot.subscriptions.totalProceeds)}`
+                    : "no subscription data"
+                }
               />
             </div>
           </header>
@@ -423,14 +982,72 @@ export default async function AppAnalyticsPage() {
 
         {snapshot ? (
           <>
-            <section className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-              <RatingsPanel ratings={snapshot.ratings} />
-              <InstallsPanel installs={snapshot.installs} />
+            {/* Financial */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="Financial" note="Sales & Trends · 7 days" />
+              <FinancePanel finance={snapshot.finance} iap={snapshot.iap} />
+              <IapPanel iap={snapshot.iap} />
             </section>
 
-            <PerformancePanel metrics={snapshot.performance} crashes={snapshot.crashes} />
+            {/* Funnel & engagement */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="Funnel & engagement" note="Analytics Reports API" />
+              <FunnelPanel funnel={snapshot.funnel} />
+              <div className="grid gap-5 lg:grid-cols-2">
+                <SourcesPanel sources={snapshot.sources} />
+                <ActiveDevicesPanel active={snapshot.activeDevices} />
+              </div>
+              <RetentionPanel retention={snapshot.retention} />
+            </section>
 
-            <ReviewsPanel reviews={snapshot.reviews} />
+            {/* Geography & devices */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="Geography & devices" />
+              <div className="grid gap-5 lg:grid-cols-2">
+                <TerritoriesPanel territories={snapshot.territories} />
+                <DevicesPanel devices={snapshot.devices} />
+              </div>
+            </section>
+
+            {/* Subscriptions */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="Subscriptions" />
+              <SubscriptionsPanel subs={snapshot.subscriptions} />
+            </section>
+
+            {/* Search */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="Search" />
+              <SearchTermsPanel terms={snapshot.searchTerms} />
+            </section>
+
+            {/* App versions */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="App versions" />
+              <AppVersionsPanel versions={snapshot.appVersions} />
+            </section>
+
+            {/* TestFlight */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="TestFlight" />
+              <TestFlightPanel tf={snapshot.testflight} />
+            </section>
+
+            {/* Ratings & installs & reviews */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="Ratings & installs" />
+              <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
+                <RatingsPanel ratings={snapshot.ratings} />
+                <InstallsPanel installs={snapshot.installs} />
+              </div>
+              <ReviewsPanel reviews={snapshot.reviews} />
+            </section>
+
+            {/* Performance */}
+            <section className="flex flex-col gap-5">
+              <SectionHeader title="Performance & stability" />
+              <PerformancePanel metrics={snapshot.performance} crashes={snapshot.crashes} />
+            </section>
 
             {snapshot.warnings.length ? (
               <section className="rounded-2xl border border-[#e7b894]/20 bg-[#e7b894]/5 p-5 text-sm text-[#f3d9bc]">

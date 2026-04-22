@@ -4,6 +4,9 @@ import { getAppDetails, listAppStoreApps } from "./apps";
 import { listCustomerReviews, summarizeRatings } from "./reviews";
 import { getPerformanceMetrics } from "./performance";
 import { getDailySales } from "./sales";
+import { getSubscriptionsSummary } from "./subscriptions";
+import { getAnalyticsReportsBundle, type AnalyticsReportsBundle } from "./analytics-reports";
+import { getTestFlightSummary } from "./testflight";
 
 function isConfigured(): boolean {
   return !!loadCredentialsFromEnv();
@@ -31,7 +34,19 @@ async function fetchSnapshot(
     name: "Unknown app",
   };
 
-  const [reviews, perf] = await Promise.all([
+  const salesDays = options.salesDays ?? 7;
+  const vendorNumber = process.env.APPSTORE_VENDOR_NUMBER;
+
+  // Kick everything off in parallel. Each branch degrades to undefined on
+  // failure and appends a warning — no single API error collapses the page.
+  const [
+    reviews,
+    perf,
+    salesResult,
+    subsResult,
+    analyticsBundle,
+    testflightResult,
+  ] = await Promise.all([
     listCustomerReviews(appId, options.reviewLimit ?? 200).catch((err) => {
       warnings.push(`Could not load reviews: ${err instanceof Error ? err.message : "unknown"}`);
       return [];
@@ -40,37 +55,69 @@ async function fetchSnapshot(
       warnings.push(`Could not load perf metrics: ${err instanceof Error ? err.message : "unknown"}`);
       return { metrics: [], crashes: undefined, warning: undefined };
     }),
+    vendorNumber
+      ? getDailySales(appId, vendorNumber, salesDays).catch((err) => {
+          warnings.push(
+            `Could not load daily sales: ${err instanceof Error ? err.message : "unknown"}`,
+          );
+          return { snapshot: null, warning: undefined };
+        })
+      : Promise.resolve({
+          snapshot: null as null,
+          warning:
+            "Set APPSTORE_VENDOR_NUMBER to enable install counts, proceeds, territories, device split and IAP breakdown from the Sales & Trends API.",
+        }),
+    vendorNumber
+      ? getSubscriptionsSummary(appId, vendorNumber, salesDays).catch((err) => {
+          warnings.push(
+            `Could not load subscription reports: ${err instanceof Error ? err.message : "unknown"}`,
+          );
+          return { snapshot: null, warning: undefined };
+        })
+      : Promise.resolve({ snapshot: null, warning: undefined }),
+    getAnalyticsReportsBundle(appId).catch((err) => {
+      warnings.push(
+        `Could not load Analytics Reports: ${err instanceof Error ? err.message : "unknown"}`,
+      );
+      return { bundle: {} as AnalyticsReportsBundle, warning: undefined };
+    }),
+    getTestFlightSummary(appId).catch((err) => {
+      warnings.push(
+        `Could not load TestFlight data: ${err instanceof Error ? err.message : "unknown"}`,
+      );
+      return { summary: null, warning: undefined };
+    }),
   ]);
 
   const ratings = summarizeRatings(reviews);
   if (perf.warning) warnings.push(perf.warning);
+  if (salesResult.warning) warnings.push(salesResult.warning);
+  if (subsResult.warning) warnings.push(subsResult.warning);
+  if (analyticsBundle.warning) warnings.push(analyticsBundle.warning);
+  if (testflightResult.warning) warnings.push(testflightResult.warning);
 
-  // Installs: only attempt sales reports when a vendor number is provided.
-  const vendorNumber = process.env.APPSTORE_VENDOR_NUMBER;
-  let installs: AppSnapshot["installs"];
-  if (vendorNumber) {
-    try {
-      const sales = await getDailySales(appId, vendorNumber, options.salesDays ?? 7);
-      if (sales.warning) warnings.push(sales.warning);
-      if (sales.snapshot) installs = sales.snapshot.installs;
-    } catch (err) {
-      warnings.push(
-        `Could not load daily sales: ${err instanceof Error ? err.message : "unknown"}`,
-      );
-    }
-  } else {
-    warnings.push(
-      "Set APPSTORE_VENDOR_NUMBER to enable install counts from the Sales & Trends API.",
-    );
-  }
+  const salesSnap = salesResult.snapshot;
+  const analytics = analyticsBundle.bundle;
 
   return {
     app,
     ratings,
     reviews: reviews.slice(0, 20),
-    installs,
-    crashes: perf.crashes,
+    installs: salesSnap?.installs,
+    crashes: perf.crashes || analytics.crashesFromReports,
     performance: perf.metrics,
+    finance: salesSnap?.finance,
+    territories: salesSnap?.territories,
+    devices: salesSnap?.devices,
+    sources: analytics.sources,
+    funnel: analytics.funnel,
+    subscriptions: subsResult.snapshot ?? undefined,
+    iap: salesSnap?.iap,
+    searchTerms: analytics.searchTerms,
+    appVersions: analytics.appVersions,
+    activeDevices: analytics.activeDevices,
+    retention: analytics.retention,
+    testflight: testflightResult.summary ?? undefined,
     warnings,
     generatedAt: new Date().toISOString(),
   };

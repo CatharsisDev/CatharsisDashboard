@@ -62,6 +62,133 @@ export interface CrashStats {
   note?: string;
 }
 
+// ---- Financial (Sales & Trends) ----------------------------------------
+export interface MoneyAmount {
+  amount: number;
+  currency: string;
+}
+
+export interface FinanceSummary {
+  proceeds?: MoneyAmount;              // developer proceeds for the period, dominant currency
+  refunds?: MoneyAmount;                // negative value representing refunded proceeds
+  paidDownloads?: number;
+  freeDownloads?: number;
+  updates?: number;
+  redownloads?: number;
+  /** Per-currency breakdown when storefronts span multiple currencies. */
+  proceedsByCurrency?: MoneyAmount[];
+  /** Total proceeds in the period, normalized to dominantCurrency if conversion was available. */
+  note?: string;
+}
+
+// ---- Territories & devices ---------------------------------------------
+export interface TerritoryStat {
+  territory: string;          // ISO 3166 alpha-3 from ASC
+  units: number;
+  proceeds?: MoneyAmount;
+}
+
+export interface DeviceStat {
+  device: string;             // e.g. "iPhone", "iPad"
+  units: number;
+  share?: number;             // 0..1
+}
+
+export interface SourceStat {
+  source: string;             // "App Store Search", "App Store Browse", "Web Referrer", "App Referrer", "Institutional Purchase", "Unavailable"
+  units: number;
+  share?: number;
+}
+
+// ---- Funnel (Analytics Reports API) ------------------------------------
+export interface FunnelSummary {
+  impressions?: number;
+  productPageViews?: number;
+  firstTimeDownloads?: number;
+  conversionRate?: number;    // 0..1, downloads / impressions
+  impressionsSeries?: TimeSeriesPoint[];
+  pageViewsSeries?: TimeSeriesPoint[];
+}
+
+// ---- Subscriptions -----------------------------------------------------
+export interface SubscriptionGroupStat {
+  groupName: string;
+  activeSubscribers?: number;
+  newSubscriptions?: number;
+  renewals?: number;
+  cancellations?: number;
+  billingRetry?: number;
+  grace?: number;
+  proceeds?: MoneyAmount;
+  churnRate?: number;         // cancellations / activeSubscribers
+}
+
+export interface SubscriptionsSummary {
+  groups: SubscriptionGroupStat[];
+  totalActive?: number;
+  totalProceeds?: MoneyAmount;
+}
+
+export interface IapProductStat {
+  sku: string;
+  name?: string;
+  units: number;
+  proceeds?: MoneyAmount;
+}
+
+export interface IapSummary {
+  products: IapProductStat[];
+  totalUnits?: number;
+  totalProceeds?: MoneyAmount;
+}
+
+// ---- Search & app versions --------------------------------------------
+export interface SearchTermStat {
+  term: string;
+  impressions?: number;
+  pageViews?: number;
+  downloads?: number;
+  share?: number;             // relative to top terms
+}
+
+export interface AppVersionStat {
+  version: string;
+  adoption?: number;          // share of active installs using this version, 0..1
+  firstAppeared?: string;     // ISO date
+}
+
+// ---- Active devices / retention / crashes ------------------------------
+export interface ActiveDevicesSummary {
+  daily?: number;
+  weekly?: number;
+  monthly?: number;
+  sessionsPerDevice?: number;
+}
+
+export interface RetentionCohort {
+  cohortDate: string;
+  day1?: number;              // 0..1
+  day7?: number;
+  day28?: number;
+}
+
+// ---- TestFlight --------------------------------------------------------
+export interface TestFlightBuild {
+  version: string;
+  buildNumber: string;
+  processingState?: string;   // PROCESSING, VALID, INVALID, FAILED
+  uploadedDate?: string;
+  expired?: boolean;
+}
+
+export interface TestFlightSummary {
+  builds: TestFlightBuild[];
+  internalTesters?: number;
+  externalTesters?: number;
+  betaFeedbackCrashes?: number;
+}
+
+// ---- Top-level snapshot ------------------------------------------------
 export interface AppSnapshot {
   app: AppMeta;
   ratings?: RatingsSummary;
@@ -69,6 +196,18 @@ export interface AppSnapshot {
   installs?: TimeSeriesStats;
   crashes?: CrashStats;
   performance?: PerformanceMetric[];
+  finance?: FinanceSummary;
+  territories?: TerritoryStat[];
+  devices?: DeviceStat[];
+  sources?: SourceStat[];
+  funnel?: FunnelSummary;
+  subscriptions?: SubscriptionsSummary;
+  iap?: IapSummary;
+  searchTerms?: SearchTermStat[];
+  appVersions?: AppVersionStat[];
+  activeDevices?: ActiveDevicesSummary;
+  retention?: RetentionCohort[];
+  testflight?: TestFlightSummary;
   warnings: string[];         // non-fatal issues surfaced to UI (missing vendor # etc.)
   generatedAt: string;        // ISO timestamp of the snapshot
 }
