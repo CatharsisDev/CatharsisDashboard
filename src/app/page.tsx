@@ -1,5 +1,11 @@
 import ContentCalendar from "./content-calendar";
 import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
+
+// `cache: "no-store"` is already set on every Upload-Post fetch, but pin the
+// route as dynamic too so Next.js never serves a stale rendered HTML payload —
+// the calendar's Refresh button calls `router.refresh()` and needs a guaranteed
+// fresh server render to pick up posts that were just scheduled in Upload-Post.
+export const dynamic = "force-dynamic";
 import {
   getAnalytics,
   getHistory,

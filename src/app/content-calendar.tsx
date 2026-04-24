@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { ScheduledPost } from "@/lib/uploadpost";
 import {
   BERLIN_TZ as BERLIN,
@@ -259,6 +260,13 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
   const [cursor, setCursor] = useState<DateParts>(initial);
   const [view, setView] = useState<CalendarView>("month");
 
+  // Server component owns the data fetch; `router.refresh()` re-runs it without a
+  // full page reload. `useTransition` gives us a pending flag so the button can
+  // show a spinner while the new server render streams in.
+  const router = useRouter();
+  const [isRefreshing, startRefresh] = useTransition();
+  const onRefresh = () => startRefresh(() => router.refresh());
+
   const eventIndex = useMemo(() => indexEvents(posts), [posts]);
 
   // Month-view cell grid.
@@ -397,6 +405,31 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
             aria-label={view === "month" ? "Next month" : "Next week"}
           >
             ›
+          </button>
+          <button
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="soft-pill inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#f3e7d7] transition hover:bg-white/10 disabled:opacity-60"
+            aria-label="Refetch scheduled posts from Upload-Post"
+            title="Refetch from Upload-Post"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 12 12"
+              aria-hidden
+              className={isRefreshing ? "animate-spin" : ""}
+            >
+              <path
+                d="M6 1.5 A4.5 4.5 0 1 1 1.5 6"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+              <path d="M6 0 L6 3 L3.2 1.5 Z" fill="currentColor" />
+            </svg>
+            {isRefreshing ? "Refreshing" : "Refresh"}
           </button>
         </div>
       </div>
