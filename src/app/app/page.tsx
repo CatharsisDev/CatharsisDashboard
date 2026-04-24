@@ -267,12 +267,24 @@ function RatingsPanel({ ratings }: { ratings: RatingsSummary | undefined }) {
 }
 
 // ---- installs -----------------------------------------------------------
-function InstallsPanel({ installs }: { installs: TimeSeriesStats | undefined }) {
+function InstallsPanel({
+  installs,
+  vendorSet,
+}: {
+  installs: TimeSeriesStats | undefined;
+  vendorSet: boolean;
+}) {
   if (!installs) {
     return (
       <Panel title="Installs">
         <EmptyNote>
-          Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> to enable daily download counts from the Sales &amp; Trends API.
+          {vendorSet
+            ? "Vendor # is set but Apple's Sales & Trends API returned no reports for this 30-day window. Reports lag ~24–48h."
+            : (
+              <>
+                Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> to enable daily download counts from the Sales &amp; Trends API.
+              </>
+            )}
         </EmptyNote>
       </Panel>
     );
@@ -292,18 +304,32 @@ function InstallsPanel({ installs }: { installs: TimeSeriesStats | undefined }) 
 }
 
 // ---- financial ----------------------------------------------------------
-function FinancePanel({ finance, iap }: { finance?: FinanceSummary; iap?: IapSummary }) {
+function FinancePanel({
+  finance,
+  iap,
+  vendorSet,
+}: {
+  finance?: FinanceSummary;
+  iap?: IapSummary;
+  vendorSet: boolean;
+}) {
   if (!finance && !iap) {
     return (
       <Panel title="Financial">
         <EmptyNote>
-          No revenue data yet. Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> and wait for Apple to process a daily report.
+          {vendorSet
+            ? "Vendor # is set but Apple hasn't returned a Sales & Trends report for this 30-day window yet. Reports lag ~24–48h after the day closes; the Notes box at the bottom shows the exact API response."
+            : (
+              <>
+                No revenue data yet. Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> in your Vercel env vars and redeploy.
+              </>
+            )}
         </EmptyNote>
       </Panel>
     );
   }
   return (
-    <Panel title="Financial" note="last 7 days">
+    <Panel title="Financial" note="last 30 days">
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <MetricTile label="Developer proceeds" value={formatMoney(finance?.proceeds)} />
         <MetricTile label="Refunds" value={formatMoney(finance?.refunds)} />
@@ -359,7 +385,7 @@ function FunnelPanel({ funnel }: { funnel: FunnelSummary | undefined }) {
     );
   }
   return (
-    <Panel title="Funnel" note="Analytics Reports · 7 days">
+    <Panel title="Funnel" note="Analytics Reports · 30 days">
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <MetricTile
           label="Impressions"
@@ -480,7 +506,7 @@ function SubscriptionsPanel({ subs }: { subs: SubscriptionsSummary | undefined }
     );
   }
   return (
-    <Panel title="Subscriptions" note="Sales & Trends · snapshot + 7d events">
+    <Panel title="Subscriptions" note="Sales & Trends · snapshot + 30d events">
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <MetricTile
           label="Active subscribers"
@@ -533,12 +559,12 @@ function IapPanel({ iap }: { iap: IapSummary | undefined }) {
   if (!iap || !iap.products.length) {
     return (
       <Panel title="In-app purchases">
-        <EmptyNote>No IAP activity in the last 7 days.</EmptyNote>
+        <EmptyNote>No IAP activity in the last 30 days.</EmptyNote>
       </Panel>
     );
   }
   return (
-    <Panel title="In-app purchases" note="Sales & Trends · 7 days">
+    <Panel title="In-app purchases" note="Sales & Trends · 30 days">
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[520px] border-collapse text-left text-sm text-[#d9c9bc]">
           <thead className="text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
@@ -929,6 +955,7 @@ export default async function AppAnalyticsPage() {
   }
 
   const nowTz = berlinTzLabel(new Date());
+  const vendorSet = !!process.env.APPSTORE_VENDOR_NUMBER;
 
   return (
     <main className="min-h-screen text-[#f3e7d7]">
@@ -947,14 +974,26 @@ export default async function AppAnalyticsPage() {
                 }
               />
               <MetricTile
-                label="Installs (7d)"
+                label="Installs (30d)"
                 value={snapshot.installs ? formatNumber(snapshot.installs.total) : "—"}
-                sub={snapshot.installs ? "Sales & Trends" : "vendor # not set"}
+                sub={
+                  snapshot.installs
+                    ? "Sales & Trends"
+                    : vendorSet
+                    ? "no reports yet"
+                    : "vendor # not set"
+                }
               />
               <MetricTile
-                label="Proceeds (7d)"
+                label="Proceeds (30d)"
                 value={formatMoney(snapshot.finance?.proceeds)}
-                sub={snapshot.finance?.proceeds ? "developer proceeds" : "no sales data"}
+                sub={
+                  snapshot.finance?.proceeds
+                    ? "developer proceeds"
+                    : vendorSet
+                    ? "no reports yet"
+                    : "vendor # not set"
+                }
               />
               <MetricTile
                 label="Active subscribers"
@@ -984,8 +1023,8 @@ export default async function AppAnalyticsPage() {
           <>
             {/* Financial */}
             <section className="flex flex-col gap-5">
-              <SectionHeader title="Financial" note="Sales & Trends · 7 days" />
-              <FinancePanel finance={snapshot.finance} iap={snapshot.iap} />
+              <SectionHeader title="Financial" note="Sales & Trends · 30 days" />
+              <FinancePanel finance={snapshot.finance} iap={snapshot.iap} vendorSet={vendorSet} />
               <IapPanel iap={snapshot.iap} />
             </section>
 
@@ -1038,7 +1077,7 @@ export default async function AppAnalyticsPage() {
               <SectionHeader title="Ratings & installs" />
               <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
                 <RatingsPanel ratings={snapshot.ratings} />
-                <InstallsPanel installs={snapshot.installs} />
+                <InstallsPanel installs={snapshot.installs} vendorSet={vendorSet} />
               </div>
               <ReviewsPanel reviews={snapshot.reviews} />
             </section>

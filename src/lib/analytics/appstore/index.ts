@@ -34,7 +34,7 @@ async function fetchSnapshot(
     name: "Unknown app",
   };
 
-  const salesDays = options.salesDays ?? 7;
+  const salesDays = options.salesDays ?? 30;
   const vendorNumber = process.env.APPSTORE_VENDOR_NUMBER;
 
   // Kick everything off in parallel. Each branch degrades to undefined on

@@ -51,12 +51,12 @@ function AnalyticsCard({ metric }: { metric: AnalyticsMetric }) {
       <div className="grid grid-cols-2 gap-3">
         <StatBox label="Followers" value={summary.followers} />
         <StatBox label="Impressions" value={summary.impressions} />
-        <StatBox label="Reach" value={summary.reach} />
-        <StatBox label="Profile views" value={summary.profileViews} />
+        <StatBox label="Likes" value={summary.likes} />
+        <StatBox label="Comments" value={summary.comments} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-[#d9c9bc] sm:grid-cols-4">
-        <span className="soft-pill rounded-full px-3 py-1">Likes: {formatNumber(summary.likes)}</span>
-        <span className="soft-pill rounded-full px-3 py-1">Comments: {formatNumber(summary.comments)}</span>
+        <span className="soft-pill rounded-full px-3 py-1">Reach: {formatNumber(summary.reach)}</span>
+        <span className="soft-pill rounded-full px-3 py-1">Profile views: {formatNumber(summary.profileViews)}</span>
         <span className="soft-pill rounded-full px-3 py-1">Shares: {formatNumber(summary.shares)}</span>
         <span className="soft-pill rounded-full px-3 py-1">Saves: {formatNumber(summary.saves)}</span>
       </div>
