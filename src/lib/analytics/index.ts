@@ -1,11 +1,11 @@
 import type { AnalyticsProvider, Platform } from "./types";
 import { appstoreProvider } from "./appstore";
-// import { googlePlayProvider } from "./googleplay"; // future
+import { googlePlayProvider } from "./googleplay";
 
 const providers: Record<Platform, AnalyticsProvider> = {
   ios: appstoreProvider,
-  // android: googlePlayProvider,
-} as Record<Platform, AnalyticsProvider>;
+  android: googlePlayProvider,
+};
 
 export function getProvider(platform: Platform): AnalyticsProvider | undefined {
   return providers[platform];

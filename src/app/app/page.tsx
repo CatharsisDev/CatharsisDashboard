@@ -1,6 +1,8 @@
 import Link from "next/link";
 import DashboardTabs from "./dashboard-tabs";
+import PlatformToggle from "./platform-toggle";
 import { getProvider } from "@/lib/analytics";
+import type { Platform } from "@/lib/analytics/types";
 import type {
   ActiveDevicesSummary,
   AppMeta,
@@ -898,37 +900,101 @@ function ReviewsPanel({ reviews }: { reviews: Review[] }) {
 }
 
 // ---- setup state --------------------------------------------------------
-function SetupState() {
+function IosSetup() {
+  return (
+    <>
+      <h1 className="font-display mt-3 text-4xl">Connect App Store Connect</h1>
+      <p className="mt-4 text-[#d9c9bc]">
+        This page reads iOS analytics directly from the App Store Connect API. Add these env
+        vars to <code className="mx-1 rounded bg-black/30 px-1 font-mono text-[#f3d9bc]">.env.local</code>
+        (locally) and your Vercel project settings (for production), then reload.
+      </p>
+      <ul className="mt-6 space-y-2 text-sm text-[#d9c9bc]">
+        <li>
+          <span className="font-mono text-[#f3d9bc]">APPSTORE_KEY_ID</span> — the Key ID shown in Users &amp; Access → Keys.
+        </li>
+        <li>
+          <span className="font-mono text-[#f3d9bc]">APPSTORE_ISSUER_ID</span> — the Issuer ID at the top of the same page.
+        </li>
+        <li>
+          <span className="font-mono text-[#f3d9bc]">APPSTORE_PRIVATE_KEY</span> — the full contents of the <span className="font-mono">.p8</span> file (or base64-encoded).
+        </li>
+        <li>
+          <span className="font-mono text-[#f3d9bc]">APPSTORE_APP_ID</span> <span className="text-[#8f7d8c]">(optional)</span> — the numeric Apple ID for a specific app. If not set, the first app returned by the API is used.
+        </li>
+        <li>
+          <span className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</span> <span className="text-[#8f7d8c]">(optional)</span> — enables Sales &amp; Trends data: installs, proceeds, refunds, territories, device split, IAP, subscriptions.
+        </li>
+      </ul>
+    </>
+  );
+}
+
+function AndroidSetup() {
+  return (
+    <>
+      <h1 className="font-display mt-3 text-4xl">Connect Google Play Console</h1>
+      <p className="mt-4 text-[#d9c9bc]">
+        This page reads Android analytics from the Play Developer API and Play Reporting API.
+        You&rsquo;ll need a Google Cloud service account with access granted in the Play Console.
+      </p>
+      <ol className="mt-6 space-y-3 text-sm text-[#d9c9bc] list-decimal list-outside pl-5 marker:text-[#e7b894]">
+        <li>
+          In <span className="italic">Google Cloud Console</span> → IAM &amp; Admin → Service accounts, create a new service account.
+          Open its <span className="italic">Keys</span> tab and Add Key → JSON. A file like
+          <span className="font-mono"> catharsis-play-xxxxxxx.json</span> downloads.
+        </li>
+        <li>
+          In <span className="italic">Google Cloud Console</span> → APIs &amp; Services → Library, enable both
+          <span className="font-mono text-[#f3d9bc]"> Google Play Android Developer API</span> and
+          <span className="font-mono text-[#f3d9bc]"> Google Play Developer Reporting API</span>.
+        </li>
+        <li>
+          In <span className="italic">Google Play Console</span> → Users and permissions → Invite new user,
+          paste the service account&rsquo;s <span className="font-mono">client_email</span> (ends in
+          <span className="font-mono"> .gserviceaccount.com</span>) and grant it <span className="italic">app
+          access</span> to your app. Needed permissions: <span className="italic">View app information</span>,
+          <span className="italic"> View financial data</span>, <span className="italic">Reply to reviews</span>.
+        </li>
+        <li>
+          Set these env vars:
+          <ul className="mt-2 space-y-1 pl-4">
+            <li>
+              <span className="font-mono text-[#f3d9bc]">GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64</span> — output of
+              <span className="font-mono"> base64 -i catharsis-play-xxxxxxx.json</span>. Safer than the raw JSON variant because newline escaping is a nightmare.
+            </li>
+            <li>
+              <span className="font-mono text-[#f3d9bc]">GOOGLEPLAY_PACKAGE_NAME</span> — e.g.
+              <span className="font-mono"> com.catharsis.cards</span>.
+            </li>
+          </ul>
+        </li>
+        <li>
+          Redeploy (or <span className="font-mono">next dev</span>) and switch the platform toggle to <em>Google Play</em>.
+          Reviews + app vitals should appear immediately; install counts, revenue and traffic sources need the Play Console
+          Statistics CSV export which isn&rsquo;t wired in yet.
+        </li>
+      </ol>
+    </>
+  );
+}
+
+function SetupState({ platform }: { platform: Platform }) {
   return (
     <main className="min-h-screen text-[#f3e7d7]">
       <div className="mx-auto w-full max-w-3xl px-6 py-16">
         <div className="card-glass rounded-[2rem] p-10">
-          <div className="text-[11px] uppercase tracking-[0.28em] text-[#e7b894]/80">
-            Mobile analytics
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] uppercase tracking-[0.28em] text-[#e7b894]/80">
+              Mobile analytics
+            </div>
+            <PlatformToggle
+              active={platform}
+              iosConfigured={!!getProvider("ios")?.isConfigured()}
+              androidConfigured={!!getProvider("android")?.isConfigured()}
+            />
           </div>
-          <h1 className="font-display mt-3 text-4xl">Connect App Store Connect</h1>
-          <p className="mt-4 text-[#d9c9bc]">
-            This page reads analytics directly from the App Store Connect API. Add these env vars to
-            <code className="mx-1 rounded bg-black/30 px-1 font-mono text-[#f3d9bc]">.env.local</code>
-            (locally) and your Vercel project settings (for production), then reload.
-          </p>
-          <ul className="mt-6 space-y-2 text-sm text-[#d9c9bc]">
-            <li>
-              <span className="font-mono text-[#f3d9bc]">APPSTORE_KEY_ID</span> — the Key ID shown in Users &amp; Access → Keys.
-            </li>
-            <li>
-              <span className="font-mono text-[#f3d9bc]">APPSTORE_ISSUER_ID</span> — the Issuer ID at the top of the same page.
-            </li>
-            <li>
-              <span className="font-mono text-[#f3d9bc]">APPSTORE_PRIVATE_KEY</span> — the full contents of the <span className="font-mono">.p8</span> file (or base64-encoded).
-            </li>
-            <li>
-              <span className="font-mono text-[#f3d9bc]">APPSTORE_APP_ID</span> <span className="text-[#8f7d8c]">(optional)</span> — the numeric Apple ID for a specific app. If not set, the first app returned by the API is used.
-            </li>
-            <li>
-              <span className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</span> <span className="text-[#8f7d8c]">(optional)</span> — enables Sales &amp; Trends data: installs, proceeds, refunds, territories, device split, IAP, subscriptions.
-            </li>
-          </ul>
+          {platform === "ios" ? <IosSetup /> : <AndroidSetup />}
           <div className="mt-8">
             <Link
               href="/"
@@ -944,10 +1010,22 @@ function SetupState() {
 }
 
 // ---- page ---------------------------------------------------------------
-export default async function AppAnalyticsPage() {
-  const provider = getProvider("ios");
+export default async function AppAnalyticsPage({
+  searchParams,
+}: {
+  // Next 16: searchParams is a Promise. We destructure after awaiting so the
+  // platform toggle (/app?platform=android) can deep-link into either view.
+  searchParams: Promise<{ platform?: string }>;
+}) {
+  const { platform: platformParam } = await searchParams;
+  const platform: Platform = platformParam === "android" ? "android" : "ios";
+
+  const iosConfigured = !!getProvider("ios")?.isConfigured();
+  const androidConfigured = !!getProvider("android")?.isConfigured();
+
+  const provider = getProvider(platform);
   if (!provider || !provider.isConfigured()) {
-    return <SetupState />;
+    return <SetupState platform={platform} />;
   }
 
   let snapshot: AppSnapshot | null = null;
@@ -955,27 +1033,50 @@ export default async function AppAnalyticsPage() {
 
   try {
     const apps = await provider.listApps();
-    const preferredId = process.env.APPSTORE_APP_ID;
+    // Each provider has a different "preferred app" env var. For iOS it's the
+    // numeric Apple ID; for Android it's the package name (which also happens
+    // to be the app's id in our Google Play integration).
+    const preferredId =
+      platform === "ios"
+        ? process.env.APPSTORE_APP_ID
+        : process.env.GOOGLEPLAY_PACKAGE_NAME;
     const chosen = apps.find((a) => a.id === preferredId) || apps[0];
     if (!chosen) {
       error =
-        "The API key is valid but no apps are visible to it. In App Store Connect, give this key access to at least one app.";
+        platform === "ios"
+          ? "The API key is valid but no apps are visible to it. In App Store Connect, give this key access to at least one app."
+          : "The service account is valid but no apps are visible to it. In Google Play Console, invite its client_email and grant app access.";
     } else {
       snapshot = await provider.fetchSnapshot(chosen.id);
     }
   } catch (err) {
-    error = err instanceof Error ? err.message : "Unknown error contacting App Store Connect";
+    error =
+      err instanceof Error
+        ? err.message
+        : platform === "ios"
+          ? "Unknown error contacting App Store Connect"
+          : "Unknown error contacting Google Play Console";
   }
 
   const nowTz = berlinTzLabel(new Date());
-  const vendorSet = !!process.env.APPSTORE_VENDOR_NUMBER;
+  // Sales & Trends vendor number only gates iOS revenue/install panels.
+  // Google Play has no equivalent gate — those panels degrade via warnings in
+  // the snapshot instead.
+  const vendorSet = platform === "ios" ? !!process.env.APPSTORE_VENDOR_NUMBER : true;
 
   return (
     <main className="min-h-screen text-[#f3e7d7]">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10">
         {snapshot ? (
           <header className="card-glass rounded-[2rem] p-8 sm:p-10">
-            <AppHeader app={snapshot.app} platformName={provider.displayName} />
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <AppHeader app={snapshot.app} platformName={provider.displayName} />
+              <PlatformToggle
+                active={platform}
+                iosConfigured={iosConfigured}
+                androidConfigured={androidConfigured}
+              />
+            </div>
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <MetricTile
                 label="Average rating"
