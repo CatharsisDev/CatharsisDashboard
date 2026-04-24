@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DashboardTabs from "./dashboard-tabs";
 import { getProvider } from "@/lib/analytics";
 import type {
   ActiveDevicesSummary,
@@ -439,17 +440,23 @@ function TerritoriesPanel({ territories }: { territories: TerritoryStat[] | unde
 }
 
 // ---- devices ------------------------------------------------------------
+// Sales & Trends' `Device` column is the *acquisition* device — i.e. what
+// device the customer was on when they tapped "Get" — not what device the app
+// runs on. "Desktop" / "Browser" mean the user came in via apps.apple.com or
+// iTunes on Mac/PC; the app still ends up installed on their iPhone/iPad.
+// For "what device actually runs the app", see the Active devices panel
+// below (sourced from Analytics Reports).
 function DevicesPanel({ devices }: { devices: DeviceStat[] | undefined }) {
   if (!devices || !devices.length) {
     return (
-      <Panel title="Devices">
-        <EmptyNote>Device breakdown not available for this window.</EmptyNote>
+      <Panel title="Acquisition device">
+        <EmptyNote>Acquisition device breakdown not available for this window.</EmptyNote>
       </Panel>
     );
   }
   const total = devices.reduce((s, d) => s + d.units, 0) || 1;
   return (
-    <Panel title="Devices" note="Sales & Trends">
+    <Panel title="Acquisition device" note="Sales & Trends · where the install was initiated">
       <div className="mt-3">
         {devices.slice(0, 10).map((d) => (
           <ShareBar
@@ -460,6 +467,12 @@ function DevicesPanel({ devices }: { devices: DeviceStat[] | undefined }) {
             hint={`${formatNumber(d.units)} · ${formatPercent(d.share)}`}
           />
         ))}
+      </div>
+      <div className="mt-3 text-[11px] leading-relaxed text-[#8f7d8c]">
+        Apple reports the device the customer was <em>on when they tapped Get</em>. &ldquo;Desktop&rdquo;
+        / &ldquo;Browser&rdquo; means they bought via apps.apple.com or iTunes on a Mac/PC — the
+        app still installs on their iPhone/iPad. See <span className="text-[#d9c9bc]">Active devices</span> below
+        for what physically runs the app.
       </div>
     </Panel>
   );
@@ -1021,72 +1034,85 @@ export default async function AppAnalyticsPage() {
 
         {snapshot ? (
           <>
-            {/* Financial */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="Financial" note="Sales & Trends · 30 days" />
-              <FinancePanel finance={snapshot.finance} iap={snapshot.iap} vendorSet={vendorSet} />
-              <IapPanel iap={snapshot.iap} />
-            </section>
-
-            {/* Funnel & engagement */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="Funnel & engagement" note="Analytics Reports API" />
-              <FunnelPanel funnel={snapshot.funnel} />
-              <div className="grid gap-5 lg:grid-cols-2">
-                <SourcesPanel sources={snapshot.sources} />
-                <ActiveDevicesPanel active={snapshot.activeDevices} />
-              </div>
-              <RetentionPanel retention={snapshot.retention} />
-            </section>
-
-            {/* Geography & devices */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="Geography & devices" />
-              <div className="grid gap-5 lg:grid-cols-2">
-                <TerritoriesPanel territories={snapshot.territories} />
-                <DevicesPanel devices={snapshot.devices} />
-              </div>
-            </section>
-
-            {/* Subscriptions */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="Subscriptions" />
-              <SubscriptionsPanel subs={snapshot.subscriptions} />
-            </section>
-
-            {/* Search */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="Search" />
-              <SearchTermsPanel terms={snapshot.searchTerms} />
-            </section>
-
-            {/* App versions */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="App versions" />
-              <AppVersionsPanel versions={snapshot.appVersions} />
-            </section>
-
-            {/* TestFlight */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="TestFlight" />
-              <TestFlightPanel tf={snapshot.testflight} />
-            </section>
-
-            {/* Ratings & installs & reviews */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="Ratings & installs" />
-              <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-                <RatingsPanel ratings={snapshot.ratings} />
-                <InstallsPanel installs={snapshot.installs} vendorSet={vendorSet} />
-              </div>
-              <ReviewsPanel reviews={snapshot.reviews} />
-            </section>
-
-            {/* Performance */}
-            <section className="flex flex-col gap-5">
-              <SectionHeader title="Performance & stability" />
-              <PerformancePanel metrics={snapshot.performance} crashes={snapshot.crashes} />
-            </section>
+            <DashboardTabs
+              overview={
+                <>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Ratings & installs" note="newest first" />
+                    <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
+                      <RatingsPanel ratings={snapshot.ratings} />
+                      <InstallsPanel installs={snapshot.installs} vendorSet={vendorSet} />
+                    </div>
+                    <ReviewsPanel reviews={snapshot.reviews} />
+                  </section>
+                </>
+              }
+              revenue={
+                <>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Financial" note="Sales & Trends · 30 days" />
+                    <FinancePanel
+                      finance={snapshot.finance}
+                      iap={snapshot.iap}
+                      vendorSet={vendorSet}
+                    />
+                    <IapPanel iap={snapshot.iap} />
+                  </section>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Subscriptions" note="Sales & Trends" />
+                    <SubscriptionsPanel subs={snapshot.subscriptions} />
+                  </section>
+                </>
+              }
+              acquisition={
+                <>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Funnel" note="Analytics Reports API" />
+                    <FunnelPanel funnel={snapshot.funnel} />
+                    <SourcesPanel sources={snapshot.sources} />
+                  </section>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Search" />
+                    <SearchTermsPanel terms={snapshot.searchTerms} />
+                  </section>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Geography & device" />
+                    <div className="grid gap-5 lg:grid-cols-2">
+                      <TerritoriesPanel territories={snapshot.territories} />
+                      <DevicesPanel devices={snapshot.devices} />
+                    </div>
+                  </section>
+                </>
+              }
+              engagement={
+                <>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Active users" note="Analytics Reports" />
+                    <ActiveDevicesPanel active={snapshot.activeDevices} />
+                    <RetentionPanel retention={snapshot.retention} />
+                  </section>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="App versions" />
+                    <AppVersionsPanel versions={snapshot.appVersions} />
+                  </section>
+                </>
+              }
+              quality={
+                <>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="Performance & stability" />
+                    <PerformancePanel
+                      metrics={snapshot.performance}
+                      crashes={snapshot.crashes}
+                    />
+                  </section>
+                  <section className="flex flex-col gap-5">
+                    <SectionHeader title="TestFlight" />
+                    <TestFlightPanel tf={snapshot.testflight} />
+                  </section>
+                </>
+              }
+            />
 
             {snapshot.warnings.length ? (
               <section className="rounded-2xl border border-[#e7b894]/20 bg-[#e7b894]/5 p-5 text-sm text-[#f3d9bc]">
