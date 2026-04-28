@@ -121,8 +121,11 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
   // proceeds, territories, device split, traffic sources, funnel, active
   // users, retention, search terms — those all live in the Play Console
   // Financial / Statistics CSV bucket, which we intentionally don't pull.
+  // Each Android-empty panel already has its own inline copy explaining
+  // this; this is a single line so the user knows it's a known gap, not a
+  // bug. Keep it short — the per-panel copy carries the detail.
   warnings.push(
-    "Google Play installs, revenue, territories, traffic sources, funnel and retention aren't in the Developer or Reporting APIs — they live in the Play Console Statistics CSV export in Google Cloud Storage. Wire that up separately to populate those panels.",
+    "Heads up: install counts, revenue, territories, traffic sources, funnel and retention need the Play Console Statistics CSV export (not wired in). The empty panels below explain where each one comes from.",
   );
 
   return {

@@ -274,21 +274,25 @@ function RatingsPanel({ ratings }: { ratings: RatingsSummary | undefined }) {
 function InstallsPanel({
   installs,
   vendorSet,
+  platform,
 }: {
   installs: TimeSeriesStats | undefined;
   vendorSet: boolean;
+  platform: Platform;
 }) {
   if (!installs) {
     return (
       <Panel title="Installs">
         <EmptyNote>
-          {vendorSet
-            ? "Vendor # is set but Apple's Sales & Trends API returned no reports for this 30-day window. Reports lag ~24–48h."
-            : (
-              <>
-                Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> to enable daily download counts from the Sales &amp; Trends API.
-              </>
-            )}
+          {platform === "android" ? (
+            "Google Play install counts come from the Play Console Statistics CSV export (Cloud Storage), not the Developer or Reporting APIs. This panel will stay empty until that export is wired in."
+          ) : vendorSet ? (
+            "Vendor # is set but Apple's Sales & Trends API returned no reports for this 30-day window. Reports lag ~24–48h."
+          ) : (
+            <>
+              Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> to enable daily download counts from the Sales &amp; Trends API.
+            </>
+          )}
         </EmptyNote>
       </Panel>
     );
@@ -312,22 +316,26 @@ function FinancePanel({
   finance,
   iap,
   vendorSet,
+  platform,
 }: {
   finance?: FinanceSummary;
   iap?: IapSummary;
   vendorSet: boolean;
+  platform: Platform;
 }) {
   if (!finance && !iap) {
     return (
       <Panel title="Financial">
         <EmptyNote>
-          {vendorSet
-            ? "Vendor # is set but Apple hasn't returned a Sales & Trends report for this 30-day window yet. Reports lag ~24–48h after the day closes; the Notes box at the bottom shows the exact API response."
-            : (
-              <>
-                No revenue data yet. Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> in your Vercel env vars and redeploy.
-              </>
-            )}
+          {platform === "android" ? (
+            "Google Play revenue, refunds and paid downloads come from the Play Console Financial CSV export (Cloud Storage). The Developer API only exposes the catalog, which is shown in the IAP and Subscriptions panels below."
+          ) : vendorSet ? (
+            "Vendor # is set but Apple hasn't returned a Sales & Trends report for this 30-day window yet. Reports lag ~24–48h after the day closes; the Notes box at the bottom shows the exact API response."
+          ) : (
+            <>
+              No revenue data yet. Set <code className="font-mono text-[#f3d9bc]">APPSTORE_VENDOR_NUMBER</code> in your Vercel env vars and redeploy.
+            </>
+          )}
         </EmptyNote>
       </Panel>
     );
@@ -1202,7 +1210,7 @@ export default async function AppAnalyticsPage({
                     <SectionHeader title="Ratings & installs" note="newest first" />
                     <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
                       <RatingsPanel ratings={snapshot.ratings} />
-                      <InstallsPanel installs={snapshot.installs} vendorSet={vendorSet} />
+                      <InstallsPanel installs={snapshot.installs} vendorSet={vendorSet} platform={platform} />
                     </div>
                     <ReviewsPanel reviews={snapshot.reviews} />
                   </section>
@@ -1211,16 +1219,23 @@ export default async function AppAnalyticsPage({
               revenue={
                 <>
                   <section className="flex flex-col gap-5">
-                    <SectionHeader title="Financial" note="Sales & Trends · 30 days" />
+                    <SectionHeader
+                      title="Financial"
+                      note={platform === "ios" ? "Sales & Trends · 30 days" : "Play Developer API · catalog only"}
+                    />
                     <FinancePanel
                       finance={snapshot.finance}
                       iap={snapshot.iap}
                       vendorSet={vendorSet}
+                      platform={platform}
                     />
                     <IapPanel iap={snapshot.iap} />
                   </section>
                   <section className="flex flex-col gap-5">
-                    <SectionHeader title="Subscriptions" note="Sales & Trends" />
+                    <SectionHeader
+                      title="Subscriptions"
+                      note={platform === "ios" ? "Sales & Trends" : "Play monetization catalog"}
+                    />
                     <SubscriptionsPanel subs={snapshot.subscriptions} />
                   </section>
                 </>

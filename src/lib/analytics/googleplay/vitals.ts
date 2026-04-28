@@ -145,10 +145,16 @@ async function queryMetricSet(
     );
     return res.rows;
   } catch (err) {
+    // 400: invalid metric/dimension/aggregation combination — usually means
+    //      the metric set added or removed metrics under us. Degrade rather
+    //      than crash the whole snapshot.
     // 403: reporting API not enabled OR not enough active devices to publish
-    // aggregates (Google gates metrics below the privacy threshold).
+    //      aggregates (Google gates metrics below the privacy threshold).
     // 404: app not found in Reporting API yet (freshly published).
-    if (err instanceof GooglePlayApiError && (err.status === 403 || err.status === 404)) {
+    if (
+      err instanceof GooglePlayApiError &&
+      (err.status === 400 || err.status === 403 || err.status === 404)
+    ) {
       return undefined;
     }
     throw err;
@@ -165,15 +171,52 @@ export async function getVitals(
   // Kick all queries off in parallel. Each metric set is its own endpoint,
   // and Google evaluates privacy thresholds per set, so some may succeed
   // while others return empty.
+  //
+  // IMPORTANT: under DAILY aggregation each metric set requires the full
+  // canonical metric tuple — usually `<rate>, <rate>7dUserWeighted,
+  // <rate>28dUserWeighted, distinctUsers`. Sending a subset returns
+  // `400: requested metrics, dimensions and aggregation_period do not
+  // match any possible combination`. We pass the full tuple but only read
+  // the rate metric for the dashboard; the user-weighted variants are
+  // available if we ever want to surface them.
   const [crashRows, anrRows, errorRows, slowStartRows, slowRenderRows, wakelockRows] =
     await Promise.all([
-      queryMetricSet(pkg, "crashRateMetricSet", ["crashRate", "userPerceivedCrashRate"]),
-      queryMetricSet(pkg, "anrRateMetricSet", ["anrRate", "userPerceivedAnrRate"]),
-      queryMetricSet(pkg, "errorCountMetricSet", ["errorReportCount"]),
-      queryMetricSet(pkg, "slowStartRateMetricSet", ["slowStartRate"]),
-      queryMetricSet(pkg, "slowRenderingRateMetricSet", ["slowRenderingRate20Fps"]),
+      queryMetricSet(pkg, "crashRateMetricSet", [
+        "crashRate",
+        "crashRate7dUserWeighted",
+        "crashRate28dUserWeighted",
+        "userPerceivedCrashRate",
+        "userPerceivedCrashRate7dUserWeighted",
+        "userPerceivedCrashRate28dUserWeighted",
+        "distinctUsers",
+      ]),
+      queryMetricSet(pkg, "anrRateMetricSet", [
+        "anrRate",
+        "anrRate7dUserWeighted",
+        "anrRate28dUserWeighted",
+        "userPerceivedAnrRate",
+        "userPerceivedAnrRate7dUserWeighted",
+        "userPerceivedAnrRate28dUserWeighted",
+        "distinctUsers",
+      ]),
+      queryMetricSet(pkg, "errorCountMetricSet", ["errorReportCount", "distinctUsers"]),
+      queryMetricSet(pkg, "slowStartRateMetricSet", [
+        "slowStartRate",
+        "slowStartRate7dUserWeighted",
+        "slowStartRate28dUserWeighted",
+        "distinctUsers",
+      ]),
+      queryMetricSet(pkg, "slowRenderingRateMetricSet", [
+        "slowRenderingRate20Fps",
+        "slowRenderingRate20Fps7dUserWeighted",
+        "slowRenderingRate20Fps28dUserWeighted",
+        "distinctUsers",
+      ]),
       queryMetricSet(pkg, "stuckBackgroundWakelockRateMetricSet", [
         "stuckBackgroundWakelockRate",
+        "stuckBackgroundWakelockRate7dUserWeighted",
+        "stuckBackgroundWakelockRate28dUserWeighted",
+        "distinctUsers",
       ]),
     ]);
 
