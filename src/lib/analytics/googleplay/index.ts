@@ -15,6 +15,65 @@ function isConfigured(): boolean {
   }
 }
 
+export interface GooglePlayDiagnostics {
+  /** True when credentials parse cleanly. */
+  configured: boolean;
+  /** Env var names that are missing entirely. */
+  missing: string[];
+  /** Names of env vars that *are* set (just for the "we see X" hint). */
+  present: string[];
+  /** If JSON was supplied but failed to parse / lacked required fields. */
+  parseError?: string;
+}
+
+/**
+ * Inspect the running environment and report what's wrong, so the setup
+ * screen can tell the user "we see GOOGLEPLAY_PACKAGE_NAME but not the JSON"
+ * instead of just falling back to the generic setup page.
+ */
+export function inspectGooglePlayConfig(): GooglePlayDiagnostics {
+  const present: string[] = [];
+  const missing: string[] = [];
+
+  const hasJson = !!process.env.GOOGLEPLAY_SERVICE_ACCOUNT_JSON;
+  const hasJsonB64 = !!process.env.GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64;
+  const hasPkg = !!process.env.GOOGLEPLAY_PACKAGE_NAME;
+
+  if (hasJson) present.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON");
+  if (hasJsonB64) present.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64");
+  if (hasPkg) present.push("GOOGLEPLAY_PACKAGE_NAME");
+
+  if (!hasJson && !hasJsonB64) {
+    missing.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64");
+  }
+  if (!hasPkg) missing.push("GOOGLEPLAY_PACKAGE_NAME");
+
+  if (missing.length) {
+    return { configured: false, missing, present };
+  }
+
+  try {
+    const creds = loadCredentialsFromEnv();
+    if (!creds) {
+      return {
+        configured: false,
+        missing,
+        present,
+        parseError:
+          "Credentials loader returned nothing. Double-check both env vars are non-empty.",
+      };
+    }
+    return { configured: true, missing, present };
+  } catch (err) {
+    return {
+      configured: false,
+      missing,
+      present,
+      parseError: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 async function listApps(): Promise<AppMeta[]> {
   if (!isConfigured()) return [];
   return listGooglePlayApps();

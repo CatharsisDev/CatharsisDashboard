@@ -2,6 +2,7 @@ import Link from "next/link";
 import DashboardTabs from "./dashboard-tabs";
 import PlatformToggle from "./platform-toggle";
 import { getProvider } from "@/lib/analytics";
+import { inspectGooglePlayConfig } from "@/lib/analytics/googleplay";
 import type { Platform } from "@/lib/analytics/types";
 import type {
   ActiveDevicesSummary,
@@ -930,7 +931,17 @@ function IosSetup() {
   );
 }
 
-function AndroidSetup() {
+function AndroidSetup({
+  diagnostics,
+}: {
+  // When env vars are partially set or the JSON fails to parse we render a
+  // banner above the steps so the user doesn't have to guess what's missing.
+  diagnostics: ReturnType<typeof inspectGooglePlayConfig>;
+}) {
+  const showBanner =
+    diagnostics.present.length > 0 ||
+    diagnostics.missing.length > 0 ||
+    !!diagnostics.parseError;
   return (
     <>
       <h1 className="font-display mt-3 text-4xl">Connect Google Play Console</h1>
@@ -938,6 +949,52 @@ function AndroidSetup() {
         This page reads Android analytics from the Play Developer API and Play Reporting API.
         You&rsquo;ll need a Google Cloud service account with access granted in the Play Console.
       </p>
+      {showBanner ? (
+        <div
+          className={[
+            "mt-6 rounded-2xl border p-4 text-sm",
+            diagnostics.parseError || diagnostics.missing.length
+              ? "border-[#e88a8a]/40 bg-[#e88a8a]/10 text-[#ffd7d7]"
+              : "border-[#9cd49c]/30 bg-[#9cd49c]/10 text-[#dff5df]",
+          ].join(" ")}
+        >
+          <div className="font-semibold">Configuration check</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            {diagnostics.present.map((v) => (
+              <li key={v}>
+                Found <span className="font-mono text-[#f3d9bc]">{v}</span>.
+              </li>
+            ))}
+            {diagnostics.missing.map((v) => (
+              <li key={v}>
+                Missing <span className="font-mono text-[#f3d9bc]">{v}</span> — add it to{" "}
+                <span className="font-mono">.env.local</span> (and Vercel env vars for production)
+                and restart <span className="font-mono">next dev</span>.
+              </li>
+            ))}
+            {diagnostics.parseError ? (
+              <li>
+                Couldn&rsquo;t parse the credentials: {diagnostics.parseError}
+              </li>
+            ) : null}
+            {diagnostics.present.length > 0 && diagnostics.missing.length === 0 && !diagnostics.parseError ? (
+              <li>
+                Credentials look valid. If this page is still showing, hard-reload the browser
+                tab — the dev server may need a moment.
+              </li>
+            ) : null}
+          </ul>
+          {diagnostics.present.length === 0 ? (
+            <p className="mt-3 text-[#ffd7d7]/80">
+              No Google Play env vars detected at all. If you just added them to{" "}
+              <span className="font-mono">.env.local</span>, restart{" "}
+              <span className="font-mono">npm run dev</span> — Next only reads env files at
+              boot. On Vercel, set them in <em>Project Settings → Environment Variables</em> for
+              the right environment scope and trigger a redeploy.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <ol className="mt-6 space-y-3 text-sm text-[#d9c9bc] list-decimal list-outside pl-5 marker:text-[#e7b894]">
         <li>
           In <span className="italic">Google Cloud Console</span> → IAM &amp; Admin → Service accounts, create a new service account.
@@ -980,6 +1037,9 @@ function AndroidSetup() {
 }
 
 function SetupState({ platform }: { platform: Platform }) {
+  // Only compute the Android diagnostic when we're showing the Android setup
+  // — for iOS this would be wasted work and the iOS setup doesn't render it.
+  const diagnostics = platform === "android" ? inspectGooglePlayConfig() : undefined;
   return (
     <main className="min-h-screen text-[#f3e7d7]">
       <div className="mx-auto w-full max-w-3xl px-6 py-16">
@@ -994,7 +1054,7 @@ function SetupState({ platform }: { platform: Platform }) {
               androidConfigured={!!getProvider("android")?.isConfigured()}
             />
           </div>
-          {platform === "ios" ? <IosSetup /> : <AndroidSetup />}
+          {platform === "ios" ? <IosSetup /> : <AndroidSetup diagnostics={diagnostics!} />}
           <div className="mt-8">
             <Link
               href="/"
