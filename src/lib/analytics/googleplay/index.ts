@@ -4,7 +4,7 @@ import { getAppDetails, listGooglePlayApps } from "./apps";
 import { listCustomerReviews, summarizeRatings } from "./reviews";
 import { getIapCatalog, getSubscriptionCatalog } from "./monetization";
 import { getVitals } from "./vitals";
-import { getDevices, getInstallsTimeSeries, getTerritories } from "./stats-installs";
+import { getDevices, getInstallsOverview, getTerritories } from "./stats-installs";
 import { getFinanceFromExport } from "./stats-finance";
 
 function isConfigured(): boolean {
@@ -147,7 +147,7 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
       return { crashes: undefined, performance: [], warning: undefined };
     }),
     bucket
-      ? getInstallsTimeSeries(bucket, appId).catch((err) => {
+      ? getInstallsOverview(bucket, appId).catch((err) => {
           warnings.push(
             `Could not read installs CSV: ${err instanceof Error ? err.message : "unknown"}`,
           );
@@ -199,7 +199,9 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
     app,
     ratings,
     reviews: reviews.slice(0, 20),
-    installs,
+    installs: installs?.installs,
+    uninstalls: installs?.uninstalls,
+    activeInstalls: installs?.activeInstalls,
     crashes: vitalsResult.crashes,
     performance: vitalsResult.performance,
     finance,

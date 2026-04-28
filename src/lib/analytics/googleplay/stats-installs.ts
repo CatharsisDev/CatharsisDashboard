@@ -59,35 +59,104 @@ function withinWindow(dateStr: string, days: number): boolean {
 }
 
 /**
- * Daily install time series for the trailing 30 days. We prefer "Daily User
- * Installs" (one install event per unique user) over device installs because
- * it matches what Play Console's UI shows by default and lines up better
- * with iOS's first-time download metric.
+ * Daily install / uninstall time series + current install base, all derived
+ * from the single overview CSV (one fetch covers all three metrics, since
+ * Play Console's overview file already has everything in one row per day).
+ *
+ * Mirrors what Play Console's mobile KPI screen surfaces:
+ *   • installs       → "User acquisitions"
+ *   • uninstalls     → "User loss"
+ *   • activeInstalls → "Total installs" (current install base, not cumulative)
+ *
+ * We prefer "Daily User Installs/Uninstalls" (one event per unique user) over
+ * the device variants because that matches Play Console's defaults and lines
+ * up better with iOS's first-time download metric.
+ */
+export interface InstallsOverview {
+  installs?: TimeSeriesStats;
+  uninstalls?: TimeSeriesStats;
+  activeInstalls?: number;
+}
+
+export async function getInstallsOverview(
+  bucket: string,
+  pkg: string,
+): Promise<InstallsOverview | undefined> {
+  const rows = await readMonthlyCsvs(bucket, pkg, "overview");
+  if (!rows.length) return undefined;
+
+  const installsByDate = new Map<string, number>();
+  const uninstallsByDate = new Map<string, number>();
+  // Active installs is a *snapshot* (not summed) — we just want the most
+  // recent day's value within our window.
+  const activeByDate = new Map<string, number>();
+
+  for (const r of rows) {
+    const date = r["Date"];
+    if (!date || !withinWindow(date, DAYS)) continue;
+
+    const inst = num(
+      pickCol(r, ["Daily User Installs", "Daily Device Installs", "Install events"]),
+    );
+    installsByDate.set(date, (installsByDate.get(date) || 0) + inst);
+
+    const uninst = num(
+      pickCol(r, ["Daily User Uninstalls", "Daily Device Uninstalls", "Uninstall events"]),
+    );
+    uninstallsByDate.set(date, (uninstallsByDate.get(date) || 0) + uninst);
+
+    // Active install base — Play Console publishes this as "Active Device
+    // Installs" (cumulative count of devices with the app installed). We
+    // store the per-date value so the latest one wins after sort.
+    const active = num(
+      pickCol(r, ["Active Device Installs", "Current Device Installs"]),
+    );
+    if (active > 0) activeByDate.set(date, active);
+  }
+
+  const installsPoints = Array.from(installsByDate.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([date, value]) => ({ date, value }));
+  const uninstallsPoints = Array.from(uninstallsByDate.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([date, value]) => ({ date, value }));
+  const activeSorted = Array.from(activeByDate.entries()).sort(([a], [b]) =>
+    a < b ? -1 : a > b ? 1 : 0,
+  );
+
+  const installs = installsPoints.length
+    ? {
+        unit: "installs",
+        total: installsPoints.reduce((s, p) => s + p.value, 0),
+        points: installsPoints,
+      }
+    : undefined;
+  const uninstalls = uninstallsPoints.length
+    ? {
+        unit: "uninstalls",
+        total: uninstallsPoints.reduce((s, p) => s + p.value, 0),
+        points: uninstallsPoints,
+      }
+    : undefined;
+  const activeInstalls = activeSorted.length
+    ? activeSorted[activeSorted.length - 1][1]
+    : undefined;
+
+  if (!installs && !uninstalls && activeInstalls === undefined) return undefined;
+  return { installs, uninstalls, activeInstalls };
+}
+
+/**
+ * Backward-compat wrapper for callers that only need the installs series.
+ * New callers should prefer `getInstallsOverview` to avoid re-reading the
+ * same monthly CSVs twice.
  */
 export async function getInstallsTimeSeries(
   bucket: string,
   pkg: string,
 ): Promise<TimeSeriesStats | undefined> {
-  const rows = await readMonthlyCsvs(bucket, pkg, "overview");
-  if (!rows.length) return undefined;
-
-  // Aggregate by date in case a row is split across multiple lines (rare).
-  const byDate = new Map<string, number>();
-  for (const r of rows) {
-    const date = r["Date"];
-    if (!date || !withinWindow(date, DAYS)) continue;
-    const v = num(
-      pickCol(r, ["Daily User Installs", "Daily Device Installs", "Install events"]),
-    );
-    byDate.set(date, (byDate.get(date) || 0) + v);
-  }
-  if (!byDate.size) return undefined;
-
-  const points = Array.from(byDate.entries())
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-    .map(([date, value]) => ({ date, value }));
-  const total = points.reduce((s, p) => s + p.value, 0);
-  return { unit: "installs", total, points };
+  const overview = await getInstallsOverview(bucket, pkg);
+  return overview?.installs;
 }
 
 /**

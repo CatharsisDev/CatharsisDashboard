@@ -194,6 +194,10 @@ export interface AppSnapshot {
   ratings?: RatingsSummary;
   reviews: Review[];
   installs?: TimeSeriesStats;
+  /** Daily uninstall counts ("user loss" in Play Console). Android-only. */
+  uninstalls?: TimeSeriesStats;
+  /** Most recent "Active Device Installs" — the current install base size. */
+  activeInstalls?: number;
   crashes?: CrashStats;
   performance?: PerformanceMetric[];
   finance?: FinanceSummary;

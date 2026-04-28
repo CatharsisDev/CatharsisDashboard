@@ -315,6 +315,28 @@ function InstallsPanel({
   );
 }
 
+// ---- user loss / uninstalls --------------------------------------------
+// Android-only — Apple doesn't publish per-day uninstalls via the Sales &
+// Trends API at all, so this panel only shows up when we have Play Console
+// CSV data. When the user loss series is empty (e.g. on iOS or before the
+// Play export bucket is wired in) we just don't render the panel — no
+// EmptyNote, since there's nothing actionable to say beyond "Android only".
+function UserLossPanel({ uninstalls }: { uninstalls: TimeSeriesStats | undefined }) {
+  if (!uninstalls) return null;
+  const avg = uninstalls.total / Math.max(1, uninstalls.points.length);
+  return (
+    <Panel title="User loss" note="uninstalls · daily">
+      <div className="font-display mt-2 text-4xl">{formatNumber(uninstalls.total)}</div>
+      <div className="mt-1 text-xs text-[#b9a7b6]">
+        last {uninstalls.points.length} days · avg {avg.toFixed(2)}/day
+      </div>
+      <div className="mt-5">
+        <InstallsChart data={uninstalls} />
+      </div>
+    </Panel>
+  );
+}
+
 // ---- financial ----------------------------------------------------------
 function FinancePanel({
   finance,
@@ -1181,7 +1203,11 @@ export default async function AppAnalyticsPage({
                 value={snapshot.installs ? formatNumber(snapshot.installs.total) : "—"}
                 sub={
                   snapshot.installs
-                    ? "Sales & Trends"
+                    ? platform === "android"
+                      ? snapshot.activeInstalls !== undefined
+                        ? `${formatNumber(snapshot.activeInstalls)} active install base`
+                        : "Play Console export"
+                      : "Sales & Trends"
                     : vendorSet
                     ? "no reports yet"
                     : "vendor # not set"
@@ -1233,6 +1259,30 @@ export default async function AppAnalyticsPage({
                       <RatingsPanel ratings={snapshot.ratings} />
                       <InstallsPanel installs={snapshot.installs} vendorSet={vendorSet} platform={platform} />
                     </div>
+                    {snapshot.uninstalls ? (
+                      <div className="grid gap-5 lg:grid-cols-2">
+                        <UserLossPanel uninstalls={snapshot.uninstalls} />
+                        {snapshot.activeInstalls !== undefined ? (
+                          <Panel title="Total installs" note="current install base">
+                            <div className="font-display mt-2 text-5xl">
+                              {formatNumber(snapshot.activeInstalls)}
+                            </div>
+                            <div className="mt-2 text-xs text-[#b9a7b6]">
+                              devices with the app currently installed
+                            </div>
+                            {snapshot.installs && snapshot.uninstalls ? (
+                              <div className="mt-4 text-xs text-[#d9c9bc]">
+                                Net last 30 days:{" "}
+                                <span className="font-mono tabular-nums text-[#fff3e0]">
+                                  {snapshot.installs.total - snapshot.uninstalls.total >= 0 ? "+" : ""}
+                                  {formatNumber(snapshot.installs.total - snapshot.uninstalls.total)}
+                                </span>
+                              </div>
+                            ) : null}
+                          </Panel>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <ReviewsPanel reviews={snapshot.reviews} />
                   </section>
                 </>
