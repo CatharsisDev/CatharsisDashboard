@@ -92,8 +92,12 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 }
 
 function Panel({ title, children, note }: { title: string; children: React.ReactNode; note?: string }) {
+  // `min-w-0` prevents the panel from blowing out of its grid column when its
+  // contents (e.g. a wide SVG chart) have an intrinsic width — without it,
+  // grid items default to `min-width: auto` and the inner overflow-x-auto
+  // never engages, so the whole page scrolls horizontally instead.
   return (
-    <div className="card-glass rounded-3xl p-6">
+    <div className="card-glass min-w-0 overflow-hidden rounded-3xl p-6">
       <div className="flex items-center justify-between gap-3">
         <div className="text-[11px] uppercase tracking-[0.22em] text-[#e7b894]/80">{title}</div>
         {note ? <span className="text-[10px] text-[#8f7d8c]">{note}</span> : null}

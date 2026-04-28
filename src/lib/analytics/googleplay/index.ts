@@ -42,10 +42,21 @@ export function inspectGooglePlayConfig(): GooglePlayDiagnostics {
   const hasPkg = !!process.env.GOOGLEPLAY_PACKAGE_NAME;
   const hasBucket = !!process.env.GOOGLEPLAY_STATS_BUCKET;
 
+  const hasUserOAuth =
+    !!process.env.GOOGLEPLAY_USER_OAUTH_JSON ||
+    !!process.env.GOOGLEPLAY_USER_OAUTH_JSON_BASE64;
+
   if (hasJson) present.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON");
   if (hasJsonB64) present.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64");
   if (hasPkg) present.push("GOOGLEPLAY_PACKAGE_NAME");
   if (hasBucket) present.push("GOOGLEPLAY_STATS_BUCKET");
+  if (hasUserOAuth) {
+    present.push(
+      process.env.GOOGLEPLAY_USER_OAUTH_JSON_BASE64
+        ? "GOOGLEPLAY_USER_OAUTH_JSON_BASE64"
+        : "GOOGLEPLAY_USER_OAUTH_JSON",
+    );
+  }
 
   if (!hasJson && !hasJsonB64) {
     missing.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64");

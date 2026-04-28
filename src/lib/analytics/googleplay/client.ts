@@ -1,5 +1,10 @@
 import { createPrivateKey, sign as cryptoSign, type KeyObject } from "node:crypto";
-import { loadCredentialsFromEnv, type GooglePlayCredentials } from "./credentials";
+import {
+  loadCredentialsFromEnv,
+  loadUserOAuthFromEnv,
+  type GooglePlayCredentials,
+  type GoogleUserOAuthCredentials,
+} from "./credentials";
 
 // Google service-account JWT spec (signed JWT bearer token grant):
 //   Header:  { alg: "RS256", typ: "JWT", kid?: <private_key_id> }
@@ -136,6 +141,99 @@ async function getAccessToken(creds: GooglePlayCredentials): Promise<string> {
   return cachedToken.token;
 }
 
+// ---- user-OAuth (refresh-token) flow, used only for the bucket ---------
+//
+// `gcloud auth application-default login` gives us a refresh token for the
+// user's personal Google account. We POST it to oauth2.googleapis.com/token
+// with grant_type=refresh_token and get back a 1h access token. Same access
+// token shape as the service-account flow — the only thing that differs is
+// the WHO and the grant type.
+//
+// We use this exclusively for Cloud Storage (the Play Console export bucket)
+// because the bucket lives in Google's project and only the developer-account
+// Account Owner can grant `Storage Object Viewer` on it via IAM. The user's
+// own credentials, by contrast, get bucket access through Play Console
+// permissions automatically.
+let cachedUserToken: { token: string; expiresAt: number; forClientId: string } | null = null;
+
+async function exchangeRefreshTokenForUserToken(
+  creds: GoogleUserOAuthCredentials,
+): Promise<{ token: string; expiresAt: number; forClientId: string }> {
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    refresh_token: creds.refreshToken,
+    client_id: creds.clientId,
+    client_secret: creds.clientSecret,
+  });
+  const res = await fetch(creds.tokenUri, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+    cache: "no-store",
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    // Common failures here: refresh_token expired (Google revoked it during a
+    // security sweep), client_id/secret mismatched, or the user revoked the
+    // gcloud OAuth grant from their account settings. The error_description
+    // in the body usually says which.
+    throw new GooglePlayApiError(res.status, text);
+  }
+  const json = JSON.parse(text) as { access_token?: string; expires_in?: number };
+  if (!json.access_token) {
+    throw new GooglePlayApiError(500, `Refresh-token response missing access_token: ${text}`);
+  }
+  const expiresIn = typeof json.expires_in === "number" ? json.expires_in : 3500;
+  return {
+    token: json.access_token,
+    expiresAt: Math.floor(Date.now() / 1000) + expiresIn - 60,
+    forClientId: creds.clientId,
+  };
+}
+
+async function getUserAccessToken(creds: GoogleUserOAuthCredentials): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    cachedUserToken &&
+    cachedUserToken.forClientId === creds.clientId &&
+    cachedUserToken.expiresAt > now
+  ) {
+    return cachedUserToken.token;
+  }
+  cachedUserToken = await exchangeRefreshTokenForUserToken(creds);
+  return cachedUserToken.token;
+}
+
+/**
+ * Returns whichever auth header the bucket should use: user-OAuth if
+ * configured (preferred, since it sidesteps the bucket IAM problem),
+ * service-account otherwise.
+ */
+async function getBucketAuthHeader(): Promise<string> {
+  const userCreds = (() => {
+    try {
+      return loadUserOAuthFromEnv();
+    } catch {
+      // Surface as service-account fallback rather than crashing the request.
+      return null;
+    }
+  })();
+  if (userCreds) {
+    return `Bearer ${await getUserAccessToken(userCreds)}`;
+  }
+  const creds = ensureCreds();
+  return `Bearer ${await getAccessToken(creds)}`;
+}
+
+/** True when GOOGLEPLAY_USER_OAUTH_JSON{,_BASE64} is set and parses cleanly. */
+export function hasUserOAuthConfigured(): boolean {
+  try {
+    return !!loadUserOAuthFromEnv();
+  } catch {
+    return false;
+  }
+}
+
 function ensureCreds(): GooglePlayCredentials {
   const creds = loadCredentialsFromEnv();
   if (!creds) throw new Error("Google Play credentials are not configured");
@@ -153,6 +251,14 @@ interface FetchOptions {
   body?: unknown;
   /** Override the API base URL — most of the Reporting API lives on a different host. */
   baseUrl?: string;
+  /**
+   * When true, prefer user-OAuth credentials (gcloud ADC) over the service
+   * account for this call. Used by the bucket client because the Play
+   * Console export bucket can't be IAM-bound to a service account by anyone
+   * except the developer-account Account Owner. Falls back to the service
+   * account if user-OAuth isn't configured.
+   */
+  useUserAuth?: boolean;
 }
 
 const PUBLISHER_BASE = "https://androidpublisher.googleapis.com";
@@ -170,13 +276,14 @@ function buildUrl(path: string, baseUrl: string, query?: FetchOptions["query"]):
 }
 
 export async function gpFetchJson<T>(path: string, options: FetchOptions = {}): Promise<T> {
-  const creds = ensureCreds();
-  const token = await getAccessToken(creds);
+  const authHeader = options.useUserAuth
+    ? await getBucketAuthHeader()
+    : `Bearer ${await getAccessToken(ensureCreds())}`;
   const url = buildUrl(path, options.baseUrl || PUBLISHER_BASE, options.query);
   const init: RequestInit = {
     method: options.method || "GET",
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: authHeader,
       Accept: "application/json",
       ...(options.body ? { "Content-Type": "application/json" } : {}),
     },
@@ -199,12 +306,13 @@ export async function gpFetchJson<T>(path: string, options: FetchOptions = {}): 
  * needs to decode itself.
  */
 export async function gpFetchBytes(path: string, options: FetchOptions = {}): Promise<Buffer> {
-  const creds = ensureCreds();
-  const token = await getAccessToken(creds);
+  const authHeader = options.useUserAuth
+    ? await getBucketAuthHeader()
+    : `Bearer ${await getAccessToken(ensureCreds())}`;
   const url = buildUrl(path, options.baseUrl || PUBLISHER_BASE, options.query);
   const res = await fetch(url, {
     method: options.method || "GET",
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: authHeader },
     cache: "no-store",
   });
   if (!res.ok) {

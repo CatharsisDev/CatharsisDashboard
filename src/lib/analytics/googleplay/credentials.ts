@@ -143,6 +143,66 @@ function normalizePrivateKey(raw: string): string {
   return s.trim();
 }
 
+/**
+ * Personal-account OAuth credentials produced by `gcloud auth
+ * application-default login`. We use these only as a fallback for the
+ * Cloud Storage bucket calls when the service account can't be granted
+ * `Storage Object Viewer` on the Play Console export bucket — that bucket
+ * lives in a Google-managed project and only the developer-account *Account
+ * Owner* can grant IAM on it. The user's own account is allowed to read it
+ * implicitly via Play Console permissions, so we ride on those creds.
+ *
+ * Credential file shape (after `gcloud auth application-default login`):
+ *   {
+ *     "client_id": "...apps.googleusercontent.com",
+ *     "client_secret": "...",
+ *     "refresh_token": "...",
+ *     "type": "authorized_user"
+ *   }
+ *
+ * We accept it via:
+ *   GOOGLEPLAY_USER_OAUTH_JSON          — raw JSON, or with `\n` escapes
+ *   GOOGLEPLAY_USER_OAUTH_JSON_BASE64   — `base64 -i adc.json` output
+ */
+export interface GoogleUserOAuthCredentials {
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+  tokenUri: string;
+}
+
+interface UserOAuthJson {
+  client_id?: string;
+  client_secret?: string;
+  refresh_token?: string;
+  type?: string;
+}
+
+export function loadUserOAuthFromEnv(): GoogleUserOAuthCredentials | null {
+  const raw =
+    process.env.GOOGLEPLAY_USER_OAUTH_JSON ||
+    process.env.GOOGLEPLAY_USER_OAUTH_JSON_BASE64;
+  if (!raw) return null;
+
+  // Reuse the same robust JSON parser we use for service-account JSON,
+  // since it has identical "Vercel mangled my newlines" failure modes.
+  const parsed = parseServiceAccountBlob(raw) as unknown as UserOAuthJson;
+  if (!parsed.client_id || !parsed.client_secret || !parsed.refresh_token) {
+    throw new Error(
+      "User-OAuth JSON is missing client_id / client_secret / refresh_token. " +
+        "Run `gcloud auth application-default login` and copy the file at " +
+        "~/.config/gcloud/application_default_credentials.json verbatim into " +
+        "GOOGLEPLAY_USER_OAUTH_JSON_BASE64.",
+    );
+  }
+  return {
+    clientId: parsed.client_id,
+    clientSecret: parsed.client_secret,
+    refreshToken: parsed.refresh_token,
+    tokenUri: "https://oauth2.googleapis.com/token",
+  };
+}
+
 export function loadCredentialsFromEnv(): GooglePlayCredentials | null {
   const raw =
     process.env.GOOGLEPLAY_SERVICE_ACCOUNT_JSON ||

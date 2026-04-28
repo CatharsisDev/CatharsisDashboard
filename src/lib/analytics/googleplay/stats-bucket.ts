@@ -37,6 +37,9 @@ export async function listBucket(bucket: string, prefix: string): Promise<string
       {
         baseUrl: STORAGE_BASE,
         query: { prefix, pageToken },
+        // Prefer user-OAuth (gcloud ADC) for the bucket — see client.ts for
+        // why; falls back to the service account when not configured.
+        useUserAuth: true,
       },
     );
     for (const item of res.items || []) {
@@ -60,6 +63,7 @@ export async function downloadCsv(bucket: string, objectName: string): Promise<s
     bytes = await gpFetchBytes(`/storage/v1/b/${encodeURIComponent(bucket)}/o/${encodeURIComponent(objectName)}`, {
       baseUrl: STORAGE_BASE,
       query: { alt: "media" },
+      useUserAuth: true,
     });
   } catch (err) {
     if (err instanceof GooglePlayApiError && err.status === 404) return null;
