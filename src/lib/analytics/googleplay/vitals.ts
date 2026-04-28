@@ -69,16 +69,33 @@ function num(v: MetricValue | undefined): number | undefined {
   return undefined;
 }
 
-function startOfDayUtc(offsetDays: number): GoogleDateTime {
+// Google Play Reporting API gates each metric set to a small allow-list of
+// timezones (its `availableTimeZones`). UTC is *not* on that list — every
+// metric set we hit only allows "America/Los_Angeles", because that's the
+// timezone Play Console aggregates against. Sending UTC returns
+// `Unsupported timezone: id: "UTC"`. Construct the date in that zone too,
+// otherwise we'd be querying a window that's off by 7-8 hours.
+const PLAY_TIMEZONE = "America/Los_Angeles";
+
+function startOfDayInPlayTz(offsetDays: number): GoogleDateTime {
   const d = new Date(Date.now() - offsetDays * 24 * 3600 * 1000);
+  // Pull Y/M/D as observed *in* Play's timezone so the window aligns with
+  // how Google aggregates daily metrics. Hours = 0 in that zone.
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: PLAY_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const lookup = (t: string) => Number(parts.find((p) => p.type === t)?.value);
   return {
-    year: d.getUTCFullYear(),
-    month: d.getUTCMonth() + 1,
-    day: d.getUTCDate(),
+    year: lookup("year"),
+    month: lookup("month"),
+    day: lookup("day"),
     hours: 0,
     minutes: 0,
     seconds: 0,
-    timeZone: { id: "UTC" },
+    timeZone: { id: PLAY_TIMEZONE },
   };
 }
 
@@ -118,8 +135,8 @@ async function queryMetricSet(
       metrics,
       timelineSpec: {
         aggregationPeriod: "DAILY",
-        startTime: startOfDayUtc(days),
-        endTime: startOfDayUtc(0),
+        startTime: startOfDayInPlayTz(days),
+        endTime: startOfDayInPlayTz(0),
       },
     };
     const res = await gpFetchJson<QueryResponse>(

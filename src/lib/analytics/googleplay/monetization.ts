@@ -8,6 +8,11 @@ import { gpFetchJson, GooglePlayApiError } from "./client";
 // at least shows what's for sale. The Subscriptions panel does the same: one
 // row per base plan with no activeSubscribers / renewals counts, annotated.
 
+// Two product representations: the legacy `inappproducts` API (now hard
+// 403'd with "Please migrate to the new publishing API" on most accounts),
+// and the new `monetization.onetimeproducts` API which is the supported
+// replacement. We try the new one first and fall back only on a clean 404.
+
 interface PlayInappProduct {
   packageName?: string;
   sku?: string;
@@ -21,6 +26,35 @@ interface PlayInappProduct {
 interface InappProductsListResponse {
   inappproduct?: PlayInappProduct[];
   tokenPagination?: { nextPageToken?: string };
+}
+
+interface OneTimeProductListing {
+  languageCode?: string;
+  title?: string;
+  description?: string;
+}
+
+interface OneTimeProduct {
+  productId?: string;
+  packageName?: string;
+  listings?: OneTimeProductListing[];
+  purchaseOptions?: Array<{
+    purchaseOptionId?: string;
+    state?: string;
+  }>;
+}
+
+interface OneTimeProductsListResponse {
+  oneTimeProducts?: OneTimeProduct[];
+  nextPageToken?: string;
+}
+
+function oneTimeTitle(p: OneTimeProduct): string | undefined {
+  return (
+    p.listings?.find((l) => l.languageCode === "en-US")?.title ||
+    p.listings?.[0]?.title ||
+    p.productId
+  );
 }
 
 interface PlaySubscription {
@@ -47,32 +81,71 @@ function catalogTitle(p: PlayInappProduct): string | undefined {
   return p.listings?.[lang]?.title || Object.values(p.listings || {})[0]?.title;
 }
 
+async function fetchOneTimeProducts(pkg: string): Promise<OneTimeProduct[] | null> {
+  try {
+    const collected: OneTimeProduct[] = [];
+    let pageToken: string | undefined;
+    for (let i = 0; i < 5; i++) {
+      const res: OneTimeProductsListResponse = await gpFetchJson<OneTimeProductsListResponse>(
+        `/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/onetimeproducts`,
+        { query: { pageSize: 100, pageToken } },
+      );
+      for (const p of res.oneTimeProducts || []) collected.push(p);
+      pageToken = res.nextPageToken;
+      if (!pageToken) break;
+    }
+    return collected;
+  } catch (err) {
+    // 404 means the new endpoint isn't available for this account yet (it
+    // rolled out in waves). Fall back to the legacy inappproducts endpoint.
+    if (err instanceof GooglePlayApiError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+async function fetchLegacyInappProducts(pkg: string): Promise<PlayInappProduct[]> {
+  const collected: PlayInappProduct[] = [];
+  let pageToken: string | undefined;
+  for (let i = 0; i < 5; i++) {
+    const res: InappProductsListResponse = await gpFetchJson<InappProductsListResponse>(
+      `/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/inappproducts`,
+      { query: { maxResults: 100, token: pageToken } },
+    );
+    for (const p of res.inappproduct || []) collected.push(p);
+    pageToken = res.tokenPagination?.nextPageToken;
+    if (!pageToken) break;
+  }
+  return collected;
+}
+
 export async function getIapCatalog(
   pkg: string,
 ): Promise<{ summary?: IapSummary; warning?: string }> {
   try {
-    const collected: PlayInappProduct[] = [];
-    let pageToken: string | undefined;
-    for (let i = 0; i < 5; i++) {
-      const res: InappProductsListResponse = await gpFetchJson<InappProductsListResponse>(
-        `/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/inappproducts`,
-        { query: { maxResults: 100, token: pageToken } },
-      );
-      for (const p of res.inappproduct || []) collected.push(p);
-      pageToken = res.tokenPagination?.nextPageToken;
-      if (!pageToken) break;
+    // Prefer the new monetization.onetimeproducts API. The old inappproducts
+    // endpoint is being deprecated and now returns 403 "Please migrate to
+    // the new publishing API" on many accounts.
+    const oneTime = await fetchOneTimeProducts(pkg);
+
+    let products: IapProductStat[] = [];
+    if (oneTime && oneTime.length) {
+      products = oneTime.map((p) => ({
+        sku: p.productId || "—",
+        name: oneTimeTitle(p),
+        units: 0,
+      }));
+    } else if (oneTime === null) {
+      // New endpoint 404'd — try the legacy one as a fallback. It may also
+      // 403, in which case the outer catch surfaces it as a warning.
+      const legacy = await fetchLegacyInappProducts(pkg);
+      products = legacy.map((p) => ({
+        sku: p.sku || "—",
+        name: catalogTitle(p),
+        units: 0,
+      }));
     }
 
-    if (!collected.length) return { summary: undefined };
-
-    const products: IapProductStat[] = collected.map((p) => ({
-      sku: p.sku || "—",
-      name: catalogTitle(p),
-      // Without Financial reports we have no units/proceeds; the panel will
-      // show a dash for both columns. That's honest — better than making
-      // numbers up.
-      units: 0,
-    }));
+    if (!products.length) return { summary: undefined };
 
     return {
       summary: { products, totalUnits: 0 },
@@ -82,6 +155,16 @@ export async function getIapCatalog(
   } catch (err) {
     if (err instanceof GooglePlayApiError && err.status === 404) {
       return { summary: undefined };
+    }
+    if (err instanceof GooglePlayApiError && err.status === 403) {
+      // No IAP read permission on this service account, or the app has no
+      // IAP catalog at all. Surface as a warning rather than crashing the
+      // whole snapshot.
+      return {
+        summary: undefined,
+        warning:
+          "Google Play IAP catalog unavailable (403). Either the app has no in-app products, or the service account is missing 'View financial data' permission in Play Console.",
+      };
     }
     throw err;
   }
