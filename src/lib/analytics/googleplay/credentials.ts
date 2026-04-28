@@ -48,24 +48,82 @@ function parseServiceAccountBlob(raw: string): ServiceAccountJson {
     }
   }
 
-  // The private_key newlines often arrive as literal `\n`; if so, fix them
-  // *inside the JSON* before parsing. Doing it on the parsed string later
-  // works too but this keeps JSON.parse happy regardless.
-  if (s.includes("\\n") && !s.includes("\n-----")) {
-    s = s.replace(/\\n/g, "\n");
-  }
-
+  // Try parsing as-is FIRST. Standard service-account JSON has its newlines
+  // escaped as `\n` inside the private_key string, which JSON.parse handles
+  // natively. We don't pre-mutate the string — that used to corrupt valid
+  // JSON by turning `\n` escapes into real newlines, which JSON disallows
+  // inside string literals.
   try {
     return JSON.parse(s) as ServiceAccountJson;
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
+  } catch (firstErr) {
+    // Recovery #1: literal control characters (real newlines/tabs) appear
+    // *inside* string literals. Common when an env-var pipeline silently
+    // unescaped \n into raw newlines. Re-escape them.
+    const reEscaped = escapeControlsInsideJsonStrings(s);
+    if (reEscaped !== s) {
+      try {
+        return JSON.parse(reEscaped) as ServiceAccountJson;
+      } catch {
+        /* fall through */
+      }
+    }
+
+    // Recovery #2: literal `\n` two-char sequences appear *outside* string
+    // literals (rare double-escape). Convert and try once more.
+    if (s.includes("\\n")) {
+      try {
+        return JSON.parse(s.replace(/\\n/g, "\n")) as ServiceAccountJson;
+      } catch {
+        /* fall through */
+      }
+    }
+
+    const detail = firstErr instanceof Error ? firstErr.message : String(firstErr);
     throw new Error(
       `Could not parse Google service-account JSON: ${detail}. ` +
         "Easiest fix: base64-encode the downloaded sa.json file with " +
-        "`base64 -i sa.json | pbcopy` and paste it into " +
+        "`base64 -i sa.json | tr -d '\\n' | pbcopy` and paste it into " +
         "GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64 instead.",
     );
   }
+}
+
+// Walk the string with a tiny state machine and escape \n, \r, \t that
+// appear inside JSON string literals. Structural characters and content
+// outside strings are passed through untouched. Used as a recovery path
+// when the env-var transport mangled the original JSON's escape sequences.
+function escapeControlsInsideJsonStrings(s: string): string {
+  let out = "";
+  let inString = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (!inString) {
+      if (c === '"') inString = true;
+      out += c;
+      continue;
+    }
+    // inside a string literal
+    if (c === "\\") {
+      // Pass through any escape sequence verbatim (including \" \\ \/ \n \t).
+      out += c;
+      const next = s[i + 1];
+      if (next !== undefined) {
+        out += next;
+        i++;
+      }
+      continue;
+    }
+    if (c === '"') {
+      inString = false;
+      out += c;
+      continue;
+    }
+    if (c === "\n") { out += "\\n"; continue; }
+    if (c === "\r") { out += "\\r"; continue; }
+    if (c === "\t") { out += "\\t"; continue; }
+    out += c;
+  }
+  return out;
 }
 
 function normalizePrivateKey(raw: string): string {
