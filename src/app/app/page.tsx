@@ -1032,12 +1032,29 @@ function AndroidSetup({
               <span className="font-mono text-[#f3d9bc]">GOOGLEPLAY_PACKAGE_NAME</span> — e.g.
               <span className="font-mono"> com.catharsis.cards</span>.
             </li>
+            <li>
+              <span className="font-mono text-[#f3d9bc]">GOOGLEPLAY_STATS_BUCKET</span> <em>(optional but recommended)</em> —
+              the Cloud Storage bucket Play Console writes daily CSV exports to. Find it in
+              <span className="italic"> Play Console → Download reports → Statistics</span>: click any
+              report and copy the <span className="italic">Cloud Storage URI</span> at the bottom
+              (looks like <span className="font-mono">gs://pubsite_prod_1234567890123</span>). With
+              this set, the Installs / Revenue / Territories / Devices panels populate from the daily
+              export bucket. Without it, those panels stay empty.
+            </li>
           </ul>
         </li>
         <li>
-          Redeploy (or <span className="font-mono">next dev</span>) and switch the platform toggle to <em>Google Play</em>.
-          Reviews + app vitals should appear immediately; install counts, revenue and traffic sources need the Play Console
-          Statistics CSV export which isn&rsquo;t wired in yet.
+          <em>If you set <span className="font-mono">GOOGLEPLAY_STATS_BUCKET</span></em>: open
+          <span className="italic"> Google Cloud Console → Cloud Storage → Buckets</span>, find the
+          <span className="font-mono"> pubsite_prod_…</span> bucket, open its <span className="italic">Permissions</span>
+          tab and grant your service account the <span className="font-mono text-[#f3d9bc]">Storage Object Viewer</span>
+          role on it. (This bucket lives in Google&rsquo;s project, not yours — the IAM grant on the bucket itself is the
+          only way the service account can read those files.)
+        </li>
+        <li>
+          Redeploy (or restart <span className="font-mono">next dev</span>) and switch the platform toggle to <em>Google Play</em>.
+          Reviews and app vitals appear immediately; the CSV-backed panels (installs, revenue, territories, devices) refresh on
+          each page load from whatever Google&rsquo;s most recent daily flush wrote to the bucket — typically yesterday&rsquo;s data.
         </li>
       </ol>
     </>

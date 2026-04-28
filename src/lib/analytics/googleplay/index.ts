@@ -4,6 +4,8 @@ import { getAppDetails, listGooglePlayApps } from "./apps";
 import { listCustomerReviews, summarizeRatings } from "./reviews";
 import { getIapCatalog, getSubscriptionCatalog } from "./monetization";
 import { getVitals } from "./vitals";
+import { getDevices, getInstallsTimeSeries, getTerritories } from "./stats-installs";
+import { getFinanceFromExport } from "./stats-finance";
 
 function isConfigured(): boolean {
   try {
@@ -38,10 +40,12 @@ export function inspectGooglePlayConfig(): GooglePlayDiagnostics {
   const hasJson = !!process.env.GOOGLEPLAY_SERVICE_ACCOUNT_JSON;
   const hasJsonB64 = !!process.env.GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64;
   const hasPkg = !!process.env.GOOGLEPLAY_PACKAGE_NAME;
+  const hasBucket = !!process.env.GOOGLEPLAY_STATS_BUCKET;
 
   if (hasJson) present.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON");
   if (hasJsonB64) present.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64");
   if (hasPkg) present.push("GOOGLEPLAY_PACKAGE_NAME");
+  if (hasBucket) present.push("GOOGLEPLAY_STATS_BUCKET");
 
   if (!hasJson && !hasJsonB64) {
     missing.push("GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64");
@@ -89,9 +93,30 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
     packageName: appId,
   };
 
+  // The Statistics / Financial CSV bucket is opt-in. Without it we still
+  // surface reviews + vitals + monetization catalog, but installs / revenue /
+  // territories / devices stay empty.
+  const creds = (() => {
+    try {
+      return loadCredentialsFromEnv();
+    } catch {
+      return null;
+    }
+  })();
+  const bucket = creds?.statsBucket;
+
   // Kick every independent fetcher off in parallel. Each one degrades
   // gracefully — a failure appends a warning instead of collapsing the page.
-  const [reviews, iapResult, subsResult, vitalsResult] = await Promise.all([
+  const [
+    reviews,
+    iapResult,
+    subsResult,
+    vitalsResult,
+    installs,
+    territories,
+    devices,
+    finance,
+  ] = await Promise.all([
     listCustomerReviews(appId, 200).catch((err) => {
       warnings.push(`Could not load reviews: ${err instanceof Error ? err.message : "unknown"}`);
       return [];
@@ -110,6 +135,38 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
       warnings.push(`Could not load Play vitals: ${err instanceof Error ? err.message : "unknown"}`);
       return { crashes: undefined, performance: [], warning: undefined };
     }),
+    bucket
+      ? getInstallsTimeSeries(bucket, appId).catch((err) => {
+          warnings.push(
+            `Could not read installs CSV: ${err instanceof Error ? err.message : "unknown"}`,
+          );
+          return undefined;
+        })
+      : Promise.resolve(undefined),
+    bucket
+      ? getTerritories(bucket, appId).catch((err) => {
+          warnings.push(
+            `Could not read country CSV: ${err instanceof Error ? err.message : "unknown"}`,
+          );
+          return undefined;
+        })
+      : Promise.resolve(undefined),
+    bucket
+      ? getDevices(bucket, appId).catch((err) => {
+          warnings.push(
+            `Could not read device CSV: ${err instanceof Error ? err.message : "unknown"}`,
+          );
+          return undefined;
+        })
+      : Promise.resolve(undefined),
+    bucket
+      ? getFinanceFromExport(bucket, appId).catch((err) => {
+          warnings.push(
+            `Could not read earnings CSV: ${err instanceof Error ? err.message : "unknown"}`,
+          );
+          return undefined;
+        })
+      : Promise.resolve(undefined),
   ]);
 
   const ratings = summarizeRatings(reviews);
@@ -117,23 +174,26 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
   if (subsResult.warning) warnings.push(subsResult.warning);
   if (vitalsResult.warning) warnings.push(vitalsResult.warning);
 
-  // Tell the user about the big structural gap versus iOS: install counts,
-  // proceeds, territories, device split, traffic sources, funnel, active
-  // users, retention, search terms — those all live in the Play Console
-  // Financial / Statistics CSV bucket, which we intentionally don't pull.
-  // Each Android-empty panel already has its own inline copy explaining
-  // this; this is a single line so the user knows it's a known gap, not a
-  // bug. Keep it short — the per-panel copy carries the detail.
-  warnings.push(
-    "Heads up: install counts, revenue, territories, traffic sources, funnel and retention need the Play Console Statistics CSV export (not wired in). The empty panels below explain where each one comes from.",
-  );
+  if (!bucket) {
+    warnings.push(
+      "Set GOOGLEPLAY_STATS_BUCKET (the gs:// URI from Play Console → Download reports) to fill installs, revenue, territories and devices. The empty panels below explain where each one comes from.",
+    );
+  } else if (!installs && !territories && !devices && !finance) {
+    warnings.push(
+      `Stats bucket (${bucket}) is configured but no CSVs landed in the trailing 30-day window for ${appId}. New buckets take ~24h to receive their first export, and the service account needs the "Storage Object Viewer" role on this bucket.`,
+    );
+  }
 
   return {
     app,
     ratings,
     reviews: reviews.slice(0, 20),
+    installs,
     crashes: vitalsResult.crashes,
     performance: vitalsResult.performance,
+    finance,
+    territories,
+    devices,
     subscriptions: subsResult.summary,
     iap: iapResult.summary,
     warnings,

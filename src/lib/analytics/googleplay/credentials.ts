@@ -18,6 +18,13 @@ export interface GooglePlayCredentials {
   privateKeyId?: string;
   tokenUri: string;
   packageName: string;
+  /**
+   * The GCS bucket Google auto-creates for Play Console exports, of the form
+   * `pubsite_prod_NNNNNNNNNNNNN`. Optional — when set, the dashboard fills
+   * installs / territories / devices / finance from the daily CSV exports.
+   * Without it those panels stay empty and the warning explains why.
+   */
+  statsBucket?: string;
 }
 
 interface ServiceAccountJson {
@@ -151,11 +158,18 @@ export function loadCredentialsFromEnv(): GooglePlayCredentials | null {
     );
   }
 
+  // Strip a possible leading `gs://` prefix and any stray slashes so callers
+  // can pass either form. Empty string → undefined so optional checks work.
+  let statsBucket = process.env.GOOGLEPLAY_STATS_BUCKET?.trim() || undefined;
+  if (statsBucket?.startsWith("gs://")) statsBucket = statsBucket.slice(5);
+  if (statsBucket) statsBucket = statsBucket.replace(/^\/+|\/+$/g, "");
+
   return {
     clientEmail: parsed.client_email,
     privateKey: normalizePrivateKey(parsed.private_key),
     privateKeyId: parsed.private_key_id,
     tokenUri: parsed.token_uri || "https://oauth2.googleapis.com/token",
     packageName,
+    statsBucket,
   };
 }

@@ -13,11 +13,15 @@ import { loadCredentialsFromEnv, type GooglePlayCredentials } from "./credential
 // back an access_token good for 1h. We cache the access token (NOT the JWT)
 // in-process and refresh ~60s before expiry.
 
-// Both APIs we call need their own scope. Asking for both up-front means a
-// single token works for everything in the snapshot.
+// All three APIs we call need their own scope. Asking for all up-front means
+// a single token works for everything in the snapshot:
+//   * androidpublisher        — apps, reviews, IAP, subscriptions
+//   * playdeveloperreporting  — vitals (crashes, ANRs, slow start, ...)
+//   * devstorage.read_only    — Play Console Statistics / Financial CSVs
 const SCOPES = [
   "https://www.googleapis.com/auth/androidpublisher",
   "https://www.googleapis.com/auth/playdeveloperreporting",
+  "https://www.googleapis.com/auth/devstorage.read_only",
 ];
 
 export class GooglePlayApiError extends Error {
@@ -187,4 +191,25 @@ export async function gpFetchJson<T>(path: string, options: FetchOptions = {}): 
   // Some endpoints (DELETE, certain :acknowledge calls) return 204 No Content.
   if (res.status === 204) return undefined as unknown as T;
   return (await res.json()) as T;
+}
+
+/**
+ * Authenticated binary GET. Used for downloading Play Console CSV exports
+ * from Cloud Storage — those come back as UTF-16 LE bytes that the caller
+ * needs to decode itself.
+ */
+export async function gpFetchBytes(path: string, options: FetchOptions = {}): Promise<Buffer> {
+  const creds = ensureCreds();
+  const token = await getAccessToken(creds);
+  const url = buildUrl(path, options.baseUrl || PUBLISHER_BASE, options.query);
+  const res = await fetch(url, {
+    method: options.method || "GET",
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new GooglePlayApiError(res.status, await res.text().catch(() => ""));
+  }
+  const arr = await res.arrayBuffer();
+  return Buffer.from(arr);
 }
