@@ -1,0 +1,18 @@
+<svg
+  viewBox="0 0 100 100"
+  xmlns="http://www.w3.org/2000/svg"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2.4"
+  stroke-linejoin="miter"
+  stroke-linecap="square"
+  aria-label="Catharsis"
+  role="img"
+>
+  <!-- Back square outline with a notch in the upper-right edge (forms upper opening of the "C"). -->
+  <path d="M 18 22 H 70 V 34 H 60 V 44 H 70 V 70 H 18 Z" />
+  <!-- Front square outline, offset down-right, with a notch in the lower-right edge (forms lower opening). -->
+  <path d="M 30 30 H 82 V 56 H 72 V 66 H 82 V 78 H 30 Z" />
+  <!-- 4-point sparkle in the center. -->
+  <path d="M 50 38 L 53 50 L 65 53 L 53 56 L 50 68 L 47 56 L 35 53 L 47 50 Z" fill="currentColor" stroke="none" />
+</svg>
