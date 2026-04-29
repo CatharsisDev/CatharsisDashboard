@@ -164,8 +164,14 @@ type ContentKind = "video" | "photo" | "text" | "other";
 
 function contentKind(postType: string | undefined): ContentKind {
   const t = (postType || "").toLowerCase();
+  // "pin_video" / "video_pin" is a video pin; we want it to read as a video,
+  // so check the video pattern first (it'd otherwise fall into the photo
+  // branch via the new pin/board rule below).
   if (/video|reel|short|tiktok|mp4|mov|clip/.test(t)) return "video";
-  if (/photo|image|img|picture|carousel|story|png|jpg|jpeg/.test(t)) return "photo";
+  // Pinterest posts come back as `pin`, `pin_image`, `image_pin`, `board_*`,
+  // etc. Treat them as photos by default — that's what 95% of pins are, and
+  // the platform color (coral-red) already conveys "this is Pinterest".
+  if (/photo|image|img|picture|carousel|story|png|jpg|jpeg|^pin\b|_pin\b|\bpin_|board/.test(t)) return "photo";
   if (/text|tweet|caption|post$|status|thread/.test(t)) return "text";
   return "other";
 }

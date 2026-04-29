@@ -189,9 +189,28 @@ export function normalizeAnalytics(response: AnalyticsResponse): AnalyticsMetric
 }
 
 export function normalizeScheduledPosts(response: ScheduleResponse): ScheduledPost[] {
-  return (response.scheduled_posts || []).sort(
-    (a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime(),
-  );
+  return (response.scheduled_posts || [])
+    .map((p) => {
+      // Upload-Post is inconsistent about which platforms it lists in
+      // `platforms` vs which it keys under `platform_content` (the per-
+      // platform title/caption map). Pinterest in particular often only
+      // shows up in `platform_content`, which means the calendar legend
+      // (and the platform dot row) never renders it. Union both sources so
+      // every platform that has *any* signal on the post is surfaced.
+      const fromArray = p.platforms || [];
+      const fromContent = p.platform_content ? Object.keys(p.platform_content) : [];
+      if (!fromContent.length) return p;
+      const seen = new Set(fromArray);
+      const merged = [...fromArray];
+      for (const key of fromContent) {
+        if (!seen.has(key)) {
+          merged.push(key);
+          seen.add(key);
+        }
+      }
+      return merged.length === fromArray.length ? p : { ...p, platforms: merged };
+    })
+    .sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime());
 }
 
 export function summarizeAnalytics(metric?: AnalyticsMetric) {
