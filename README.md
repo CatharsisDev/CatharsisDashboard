@@ -90,14 +90,44 @@ Android analytics come from the **Google Play Android Developer API v3** (review
 - The Reporting API suppresses metric sets for apps below its privacy threshold (~1k daily active installs). Freshly published or low-traffic apps will see an empty *Performance & stability* panel until Google publishes aggregates. This is the API's behaviour, not a bug.
 - Crash-free user rate is reported as `1 - userPerceivedCrashRate`, averaged over 28 days. iOS reports this directly; Google only reports the rate, so the derivation is flagged inline on the panel.
 
+### Google Analytics 4 (catharsis.cards) — Web tab
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `GA4_PROPERTY_ID` | yes | The 9-digit GA4 property ID, found in GA4 → Admin → Property settings. **Not** the measurement ID (`G-XXXXXX`). |
+| `GA4_HOSTNAME` | no | Display label in the page header. Defaults to `catharsis.cards`. |
+| `GOOGLEPLAY_SERVICE_ACCOUNT_JSON_BASE64` | yes (default path) | Reused from Play. The Web tab signs an analytics-scoped JWT with this key. |
+| `GA4_SERVICE_ACCOUNT_JSON_BASE64` | optional | Use a dedicated GA4 service account instead of reusing Play. Same JSON shape. |
+| `GOOGLEPLAY_USER_OAUTH_JSON_BASE64` | optional fallback | gcloud ADC refresh token. Only used if no service account is configured — Google's risk-based auth often blocks the analytics scope on this OAuth client, so the service-account path is preferred. |
+
+**Setup steps (recommended — service-account path):**
+
+1. **Find your property ID.** GA4 → Admin → Property settings → "Property ID" (the number under the property name, not the `G-XXXXXX` measurement ID). Set as `GA4_PROPERTY_ID` on Vercel.
+2. **Grant Viewer access to your service account.** GA4 → Admin → Property access management → `+` → Add users. Paste the `client_email` from your Play service-account JSON (e.g. `name@project.iam.gserviceaccount.com`), pick `Viewer`, untick "Notify new users by email" (service accounts have no inbox), and save.
+3. **Enable the Analytics Data API.** In the same GCP project that owns your service account:
+   ```bash
+   gcloud services enable analyticsdata.googleapis.com
+   ```
+   Or via the console: `console.cloud.google.com/apis/library/analyticsdata.googleapis.com` → Enable.
+4. **Redeploy.** Push to main; Vercel rebuilds. New properties take ~24h to start serving non-empty reports.
+
+The service-account path bypasses the gcloud user-OAuth flow that Google blocks for the `analytics.readonly` scope ("This app tried to access sensitive info in your Google Account"). If you ever do want to use user-OAuth instead — typically because you want per-user access logging in GA4 — re-mint your gcloud refresh token with the analytics scope (single line; `--scopes=` is whitespace-sensitive):
+
+```bash
+gcloud auth application-default login --scopes=openid,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/devstorage.read_only,https://www.googleapis.com/auth/analytics.readonly
+```
+
+…then click "Advanced → Go to Google Cloud SDK (unsafe)" past Google's warning. Re-base64 the credential file into `GOOGLEPLAY_USER_OAUTH_JSON_BASE64`. The Web tab will fall back to user-OAuth when no service account is configured.
+
 ## Architecture notes
 
 - `src/lib/analytics/types.ts` — provider-agnostic contracts (`AnalyticsProvider`, `AppSnapshot`, etc.).
 - `src/lib/analytics/appstore/` — App Store Connect implementation (JWT, REST client, reviews, performance, sales).
 - `src/lib/analytics/googleplay/` — Google Play implementation (service-account JWT, Publisher + Reporting clients, reviews, monetization, vitals).
+- `src/lib/analytics/web/` — Google Analytics 4 implementation (Data API v1beta runReport, KPIs + traffic + audience + conversions). Reuses the gcloud user-OAuth refresh token from `analytics/googleplay/credentials`.
 - `src/lib/analytics/index.ts` — provider registry. Both iOS and Android are wired up; the `/app` page picks one based on `?platform=`.
 - `src/lib/tz.ts` — shared Europe/Berlin formatting + MESZ/MEZ label. Safe to import from both server and client components.
-- `src/app/_components/top-nav.tsx` — shared top nav (Social / App).
+- `src/app/_components/top-nav.tsx` — shared top nav (Social / App / Web).
 - `src/app/app/platform-toggle.tsx` — iOS / Android pill switcher. Preserves other query params on switch.
 
 ## Deploy

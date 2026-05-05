@@ -13,6 +13,7 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/", label: "Social", eyebrow: "Content & growth", matchPrefix: "__root__" },
   { href: "/app", label: "App", eyebrow: "Mobile analytics", matchPrefix: "/app" },
+  { href: "/web", label: "Web", eyebrow: "Site analytics", matchPrefix: "/web" },
 ];
 
 function isActive(pathname: string, item: NavItem) {
