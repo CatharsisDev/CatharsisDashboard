@@ -1,9 +1,11 @@
 import Link from "next/link";
 import DashboardTabs from "./dashboard-tabs";
 import PlatformToggle from "./platform-toggle";
+import PeriodToggle from "../_components/period-toggle";
 import { getProvider } from "@/lib/analytics";
 import { inspectGooglePlayConfig } from "@/lib/analytics/googleplay";
 import type { Platform } from "@/lib/analytics/types";
+import { parsePeriod, periodLabel, periodShortLabel } from "@/lib/period";
 import type {
   ActiveDevicesSummary,
   AppMeta,
@@ -1125,11 +1127,13 @@ export default async function AppAnalyticsPage({
   searchParams,
 }: {
   // Next 16: searchParams is a Promise. We destructure after awaiting so the
-  // platform toggle (/app?platform=android) can deep-link into either view.
-  searchParams: Promise<{ platform?: string }>;
+  // platform toggle (/app?platform=android) can deep-link into either view,
+  // and the period toggle (/app?period=7d) can scope the snapshot.
+  searchParams: Promise<{ platform?: string; period?: string }>;
 }) {
-  const { platform: platformParam } = await searchParams;
+  const { platform: platformParam, period: periodParam } = await searchParams;
   const platform: Platform = platformParam === "android" ? "android" : "ios";
+  const period = parsePeriod(periodParam);
 
   const iosConfigured = !!getProvider("ios")?.isConfigured();
   const androidConfigured = !!getProvider("android")?.isConfigured();
@@ -1158,7 +1162,7 @@ export default async function AppAnalyticsPage({
           ? "The API key is valid but no apps are visible to it. In App Store Connect, give this key access to at least one app."
           : "The service account is valid but no apps are visible to it. In Google Play Console, invite its client_email and grant app access.";
     } else {
-      snapshot = await provider.fetchSnapshot(chosen.id);
+      snapshot = await provider.fetchSnapshot(chosen.id, { period });
     }
   } catch (err) {
     error =
@@ -1182,11 +1186,14 @@ export default async function AppAnalyticsPage({
           <header className="card-glass rounded-[2rem] p-8 sm:p-10">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <AppHeader app={snapshot.app} platformName={provider.displayName} />
-              <PlatformToggle
-                active={platform}
-                iosConfigured={iosConfigured}
-                androidConfigured={androidConfigured}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <PeriodToggle active={period} basePath="/app" />
+                <PlatformToggle
+                  active={platform}
+                  iosConfigured={iosConfigured}
+                  androidConfigured={androidConfigured}
+                />
+              </div>
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <MetricTile
@@ -1199,7 +1206,7 @@ export default async function AppAnalyticsPage({
                 }
               />
               <MetricTile
-                label="Installs (30d)"
+                label={`Installs (${periodShortLabel(period)})`}
                 value={snapshot.installs ? formatNumber(snapshot.installs.total) : "—"}
                 sub={
                   snapshot.installs
@@ -1214,7 +1221,7 @@ export default async function AppAnalyticsPage({
                 }
               />
               <MetricTile
-                label="Proceeds (30d)"
+                label={`Proceeds (${periodShortLabel(period)})`}
                 value={formatMoney(snapshot.finance?.proceeds)}
                 sub={
                   snapshot.finance?.proceeds
@@ -1272,7 +1279,7 @@ export default async function AppAnalyticsPage({
                             </div>
                             {snapshot.installs && snapshot.uninstalls ? (
                               <div className="mt-4 text-xs text-[#d9c9bc]">
-                                Net last 30 days:{" "}
+                                Net {periodLabel(period)}:{" "}
                                 <span className="font-mono tabular-nums text-[#fff3e0]">
                                   {snapshot.installs.total - snapshot.uninstalls.total >= 0 ? "+" : ""}
                                   {formatNumber(snapshot.installs.total - snapshot.uninstalls.total)}
@@ -1292,7 +1299,7 @@ export default async function AppAnalyticsPage({
                   <section className="flex flex-col gap-5">
                     <SectionHeader
                       title="Financial"
-                      note={platform === "ios" ? "Sales & Trends · 30 days" : "Play Developer API · catalog only"}
+                      note={platform === "ios" ? `Sales & Trends · ${periodLabel(period)}` : "Play Developer API · catalog only"}
                     />
                     <FinancePanel
                       finance={snapshot.finance}

@@ -1,3 +1,9 @@
+import {
+  periodDays,
+  periodToGa4PriorRange,
+  periodToGa4Range,
+  type Period,
+} from "@/lib/period";
 import { runReport, type RunReportResponse } from "./client";
 import type {
   WebDailyPoint,
@@ -9,11 +15,9 @@ import type {
   WebTrafficSource,
 } from "./types";
 
-// All queries operate on a trailing 30-day window. GA4 understands relative
-// strings like "30daysAgo" so we don't have to compute YYYY-MM-DD ourselves;
-// it's also TZ-correct (uses the property's configured time zone).
-const DATE_RANGE = { startDate: "30daysAgo", endDate: "today" } as const;
-const PREV_DATE_RANGE = { startDate: "60daysAgo", endDate: "31daysAgo" } as const;
+// All queries operate on whatever trailing window the caller passes. GA4
+// understands relative strings like "30daysAgo" so we don't compute
+// YYYY-MM-DD ourselves; we also get property-TZ correctness for free.
 
 function num(v: string | undefined): number {
   if (!v) return 0;
@@ -26,7 +30,7 @@ function num(v: string | undefined): number {
 // We pull all five header metrics in one report (one row, no dimensions) so
 // it's a single round trip. GA4 returns them in the same order we requested,
 // indexed by metricHeaders[i].name.
-export async function getKpis(propertyId: string): Promise<WebKpis> {
+export async function getKpis(propertyId: string, period: Period): Promise<WebKpis> {
   const res = await runReport(propertyId, {
     metrics: [
       { name: "activeUsers" },
@@ -39,7 +43,7 @@ export async function getKpis(propertyId: string): Promise<WebKpis> {
       { name: "userEngagementDuration" },
       { name: "keyEvents" },
     ],
-    dateRanges: [DATE_RANGE],
+    dateRanges: [periodToGa4Range(period)],
   });
 
   const get = (name: string): number | undefined => {
@@ -72,13 +76,14 @@ export async function getKpis(propertyId: string): Promise<WebKpis> {
 // One row per day with sessions + activeUsers. Sorted ascending so the chart
 // reads left-to-right. GA4 returns the date as 'YYYYMMDD' which we reformat
 // to ISO for display consistency with the iOS / Android panels.
-export async function getDaily(propertyId: string): Promise<WebDailyPoint[]> {
+export async function getDaily(propertyId: string, period: Period): Promise<WebDailyPoint[]> {
   const res = await runReport(propertyId, {
     dimensions: [{ name: "date" }],
     metrics: [{ name: "sessions" }, { name: "activeUsers" }],
-    dateRanges: [DATE_RANGE],
+    dateRanges: [periodToGa4Range(period)],
     orderBys: [{ dimension: { dimensionName: "date" }, desc: false }],
-    limit: 31,
+    // +1 because the window is inclusive on both ends.
+    limit: periodDays(period) + 1,
   });
 
   const sIdx = res.metricHeaders?.findIndex((h) => h.name === "sessions") ?? -1;
@@ -101,7 +106,10 @@ export async function getDaily(propertyId: string): Promise<WebDailyPoint[]> {
 //
 // Order by views desc, cap at 25. We pull pageTitle alongside pagePath so
 // the table can fall back to the title when the path is just `/`.
-export async function getTopPages(propertyId: string): Promise<WebTopPage[]> {
+export async function getTopPages(
+  propertyId: string,
+  period: Period,
+): Promise<WebTopPage[]> {
   const res = await runReport(propertyId, {
     dimensions: [{ name: "pagePath" }, { name: "pageTitle" }],
     metrics: [
@@ -109,7 +117,7 @@ export async function getTopPages(propertyId: string): Promise<WebTopPage[]> {
       { name: "activeUsers" },
       { name: "userEngagementDuration" },
     ],
-    dateRanges: [DATE_RANGE],
+    dateRanges: [periodToGa4Range(period)],
     orderBys: [{ metric: { metricName: "screenPageViews" }, desc: true }],
     limit: 25,
   });
@@ -133,11 +141,14 @@ export async function getTopPages(propertyId: string): Promise<WebTopPage[]> {
 }
 
 // ---- Traffic sources ----------------------------------------------------
-export async function getSources(propertyId: string): Promise<WebTrafficSource[]> {
+export async function getSources(
+  propertyId: string,
+  period: Period,
+): Promise<WebTrafficSource[]> {
   const res = await runReport(propertyId, {
     dimensions: [{ name: "sessionSource" }, { name: "sessionMedium" }],
     metrics: [{ name: "sessions" }, { name: "activeUsers" }],
-    dateRanges: [DATE_RANGE],
+    dateRanges: [periodToGa4Range(period)],
     orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
     limit: 25,
   });
@@ -154,11 +165,14 @@ export async function getSources(propertyId: string): Promise<WebTrafficSource[]
 }
 
 // ---- Geography ----------------------------------------------------------
-export async function getGeography(propertyId: string): Promise<WebGeoStat[]> {
+export async function getGeography(
+  propertyId: string,
+  period: Period,
+): Promise<WebGeoStat[]> {
   const res = await runReport(propertyId, {
     dimensions: [{ name: "country" }],
     metrics: [{ name: "sessions" }, { name: "activeUsers" }],
-    dateRanges: [DATE_RANGE],
+    dateRanges: [periodToGa4Range(period)],
     orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
     limit: 25,
   });
@@ -174,11 +188,14 @@ export async function getGeography(propertyId: string): Promise<WebGeoStat[]> {
 }
 
 // ---- Devices ------------------------------------------------------------
-export async function getDevices(propertyId: string): Promise<WebDeviceStat[]> {
+export async function getDevices(
+  propertyId: string,
+  period: Period,
+): Promise<WebDeviceStat[]> {
   const res = await runReport(propertyId, {
     dimensions: [{ name: "deviceCategory" }],
     metrics: [{ name: "sessions" }, { name: "activeUsers" }],
-    dateRanges: [DATE_RANGE],
+    dateRanges: [periodToGa4Range(period)],
     orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
     limit: 10,
   });
@@ -205,11 +222,14 @@ export async function getDevices(propertyId: string): Promise<WebDeviceStat[]> {
 // the events the user has actually flagged as key events in GA4. If they
 // haven't flagged any, this returns an empty list and the panel shows an
 // empty-state message rather than rendering noise.
-export async function getKeyEvents(propertyId: string): Promise<WebKeyEventStat[]> {
+export async function getKeyEvents(
+  propertyId: string,
+  period: Period,
+): Promise<WebKeyEventStat[]> {
   const res = await runReport(propertyId, {
     dimensions: [{ name: "eventName" }],
     metrics: [{ name: "keyEvents" }, { name: "sessions" }],
-    dateRanges: [DATE_RANGE],
+    dateRanges: [periodToGa4Range(period)],
     orderBys: [{ metric: { metricName: "keyEvents" }, desc: true }],
     limit: 25,
   });
@@ -235,7 +255,10 @@ export async function getKeyEvents(propertyId: string): Promise<WebKeyEventStat[
 // One report per metric kept compact by batching all metrics in a single
 // runReport with the previous-period date range. Returns the prior 30-day
 // totals so the page can compute deltas like "↑12% vs prior 30d".
-export async function getPriorPeriodKpis(propertyId: string): Promise<WebKpis> {
+export async function getPriorPeriodKpis(
+  propertyId: string,
+  period: Period,
+): Promise<WebKpis> {
   const res: RunReportResponse = await runReport(propertyId, {
     metrics: [
       { name: "activeUsers" },
@@ -244,7 +267,7 @@ export async function getPriorPeriodKpis(propertyId: string): Promise<WebKpis> {
       { name: "userEngagementDuration" },
       { name: "keyEvents" },
     ],
-    dateRanges: [PREV_DATE_RANGE],
+    dateRanges: [periodToGa4PriorRange(period)],
   });
 
   const get = (name: string): number | undefined => {

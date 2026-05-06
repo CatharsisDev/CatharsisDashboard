@@ -1,4 +1,5 @@
 import type { AnalyticsProvider, AppMeta, AppSnapshot } from "../types";
+import { DEFAULT_PERIOD, periodDays, type Period } from "@/lib/period";
 import { loadCredentialsFromEnv } from "./jwt";
 import { getAppDetails, listAppStoreApps } from "./apps";
 import { listCustomerReviews, summarizeRatings } from "./reviews";
@@ -19,7 +20,8 @@ async function listApps(): Promise<AppMeta[]> {
 
 export interface FetchSnapshotOptions {
   reviewLimit?: number;
-  salesDays?: number;
+  /** Trailing window. Defaults to DEFAULT_PERIOD (30d). */
+  period?: Period;
 }
 
 async function fetchSnapshot(
@@ -34,7 +36,8 @@ async function fetchSnapshot(
     name: "Unknown app",
   };
 
-  const salesDays = options.salesDays ?? 30;
+  const period: Period = options.period ?? DEFAULT_PERIOD;
+  const salesDays = periodDays(period);
   const vendorNumber = process.env.APPSTORE_VENDOR_NUMBER;
 
   // Kick everything off in parallel. Each branch degrades to undefined on
@@ -101,6 +104,7 @@ async function fetchSnapshot(
 
   return {
     app,
+    period,
     ratings,
     reviews: reviews.slice(0, 20),
     installs: salesSnap?.installs,

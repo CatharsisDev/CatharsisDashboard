@@ -2,6 +2,8 @@
 // App Store Connect is the first implementation; Google Play will slot in
 // later by implementing the same AnalyticsProvider contract.
 
+import type { Period } from "@/lib/period";
+
 export type Platform = "ios" | "android";
 
 export interface AppMeta {
@@ -194,6 +196,8 @@ export interface AppSnapshot {
   ratings?: RatingsSummary;
   reviews: Review[];
   installs?: TimeSeriesStats;
+  /** Trailing window the snapshot covers — drives KPI sub-text labels. */
+  period?: Period;
   /** Daily uninstall counts ("user loss" in Play Console). Android-only. */
   uninstalls?: TimeSeriesStats;
   /** Most recent "Active Device Installs" — the current install base size. */
@@ -223,5 +227,5 @@ export interface AnalyticsProvider {
   /** Fast env-var check so the UI can show a setup state instead of crashing. */
   isConfigured(): boolean;
   listApps(): Promise<AppMeta[]>;
-  fetchSnapshot(appId: string): Promise<AppSnapshot>;
+  fetchSnapshot(appId: string, opts?: { period?: Period }): Promise<AppSnapshot>;
 }

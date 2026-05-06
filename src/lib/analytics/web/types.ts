@@ -1,3 +1,5 @@
+import type { Period } from "@/lib/period";
+
 // Provider-agnostic shapes for website analytics. Today this is GA4 only.
 // Mirrors the AppSnapshot pattern from analytics/types.ts so the UI can lean
 // on the same conventions (warnings array, generatedAt, optional fields that
@@ -60,6 +62,8 @@ export interface WebSnapshot {
   /** Property display name + ID, surfaced in the page header. */
   propertyId: string;
   hostname: string;      // catharsis.cards (config'd, displayed as label)
+  /** Trailing window the snapshot covers — drives all KPI sub-text labels. */
+  period: Period;
   kpis: WebKpis;
   daily?: WebDailyPoint[];
   topPages?: WebTopPage[];

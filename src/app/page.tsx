@@ -1,4 +1,6 @@
 import ContentCalendar from "./content-calendar";
+import PeriodToggle from "./_components/period-toggle";
+import { parsePeriod, periodDays, periodLabel } from "@/lib/period";
 import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
 
 // `cache: "no-store"` is already set on every Upload-Post fetch, but pin the
@@ -119,7 +121,22 @@ function getTopPosts(postAnalytics: PostAnalyticsResponse[]) {
     .slice(0, 6);
 }
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  // The period toggle propagates as ?period=7d|30d|90d|365d. UploadPost's
+  // analytics endpoint returns aggregated current-state metrics that aren't
+  // period-scoped, so on this page the period mostly drives the recent-
+  // activity table cutoff and the visible labels — the cards themselves
+  // surface whatever Upload-Post returns.
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const { period: periodParam } = await searchParams;
+  const period = parsePeriod(periodParam);
+  // Build the cutoff from `new Date()` rather than Date.now() so the React
+  // server-component purity lint stays happy — they're equivalent at runtime.
+  const periodCutoffMs = new Date().getTime() - periodDays(period) * 24 * 3600 * 1000;
+
   let history: HistoryItem[] = [];
   let scheduledPosts: Awaited<ReturnType<typeof normalizeScheduledPosts>> = [];
   let analytics: AnalyticsMetric[] = [];
@@ -157,7 +174,16 @@ export default async function Home() {
     error = err instanceof Error ? err.message : "Unknown error loading Upload-Post data";
   }
 
-  const recent = [...history].slice(0, 12);
+  // Filter the recent-activity table to posts uploaded inside the selected
+  // window, then cap to a sane row count. Falls back to "no timestamp" rows
+  // (legacy entries) when the cutoff would have hidden everything.
+  const inWindow = history.filter((h) => {
+    const ts = h.upload_timestamp || h.scheduled_date;
+    if (!ts) return false;
+    const t = new Date(ts).getTime();
+    return Number.isFinite(t) && t >= periodCutoffMs;
+  });
+  const recent = (inWindow.length ? inWindow : history).slice(0, 12);
   const nowTzLabel = berlinTzLabel(new Date());
 
   return (
@@ -167,12 +193,15 @@ export default async function Home() {
         <header className="card-glass overflow-hidden rounded-[2rem] p-8 sm:p-10">
           <div className="grid gap-10 lg:grid-cols-[1.3fr_0.9fr] lg:items-center">
             <div>
-              <div className="flex items-center gap-3">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7b894]/15 ring-1 ring-[#e7b894]/40">
-                  <span className="h-2 w-2 rounded-full bg-[#e7b894] shadow-[0_0_16px_rgba(231,184,148,0.8)]" />
-                </span>
-                <span className="text-[11px] uppercase tracking-[0.32em] text-[#e7b894]">Catharsis</span>
-                <span className="text-[11px] uppercase tracking-[0.24em] text-[#b9a7b6]">· rhythm + release</span>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#e7b894]/15 ring-1 ring-[#e7b894]/40">
+                    <span className="h-2 w-2 rounded-full bg-[#e7b894] shadow-[0_0_16px_rgba(231,184,148,0.8)]" />
+                  </span>
+                  <span className="text-[11px] uppercase tracking-[0.32em] text-[#e7b894]">Catharsis</span>
+                  <span className="text-[11px] uppercase tracking-[0.24em] text-[#b9a7b6]">· rhythm + release</span>
+                </div>
+                <PeriodToggle active={period} basePath="/" />
               </div>
               <h1 className="font-display mt-6 text-5xl leading-[1.02] tracking-tight sm:text-6xl">
                 A softer place for
@@ -298,7 +327,8 @@ export default async function Home() {
               <h2 className="font-display mt-2 text-3xl sm:text-4xl">Recent uploads</h2>
             </div>
             <span className="text-xs text-[#b9a7b6]">
-              Latest {recent.length} · times in {nowTzLabel}
+              {inWindow.length ? `${recent.length} in ${periodLabel(period)}` : `Latest ${recent.length}`}
+              {" "}· times in {nowTzLabel}
             </span>
           </div>
           <div className="overflow-hidden rounded-2xl border border-white/5 bg-black/10">

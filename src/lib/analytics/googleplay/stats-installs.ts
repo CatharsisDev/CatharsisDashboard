@@ -15,7 +15,7 @@ import { downloadCsv, monthsSpanning, parseCsvRows } from "./stats-bucket";
 // schema tweak doesn't silently zero out the panel.
 
 const STATS_PREFIX = "stats/installs";
-const DAYS = 30;
+const DEFAULT_DAYS = 30;
 
 function num(v: string | undefined): number {
   if (!v) return 0;
@@ -36,8 +36,9 @@ async function readMonthlyCsvs(
   bucket: string,
   pkg: string,
   suffix: "overview" | "country" | "device",
+  days: number,
 ): Promise<Record<string, string>[]> {
-  const months = monthsSpanning(DAYS);
+  const months = monthsSpanning(days);
   const all: Record<string, string>[] = [];
   for (const ym of months) {
     const name = `${STATS_PREFIX}/installs_${pkg}_${ym}_${suffix}.csv`;
@@ -81,8 +82,9 @@ export interface InstallsOverview {
 export async function getInstallsOverview(
   bucket: string,
   pkg: string,
+  days: number = DEFAULT_DAYS,
 ): Promise<InstallsOverview | undefined> {
-  const rows = await readMonthlyCsvs(bucket, pkg, "overview");
+  const rows = await readMonthlyCsvs(bucket, pkg, "overview", days);
   if (!rows.length) return undefined;
 
   const installsByDate = new Map<string, number>();
@@ -93,7 +95,7 @@ export async function getInstallsOverview(
 
   for (const r of rows) {
     const date = r["Date"];
-    if (!date || !withinWindow(date, DAYS)) continue;
+    if (!date || !withinWindow(date, days)) continue;
 
     const inst = num(
       pickCol(r, ["Daily User Installs", "Daily Device Installs", "Install events"]),
@@ -154,25 +156,27 @@ export async function getInstallsOverview(
 export async function getInstallsTimeSeries(
   bucket: string,
   pkg: string,
+  days: number = DEFAULT_DAYS,
 ): Promise<TimeSeriesStats | undefined> {
-  const overview = await getInstallsOverview(bucket, pkg);
+  const overview = await getInstallsOverview(bucket, pkg, days);
   return overview?.installs;
 }
 
 /**
- * Top territories by install volume in the trailing 30 days.
+ * Top territories by install volume in the trailing window.
  */
 export async function getTerritories(
   bucket: string,
   pkg: string,
+  days: number = DEFAULT_DAYS,
 ): Promise<TerritoryStat[] | undefined> {
-  const rows = await readMonthlyCsvs(bucket, pkg, "country");
+  const rows = await readMonthlyCsvs(bucket, pkg, "country", days);
   if (!rows.length) return undefined;
 
   const byCountry = new Map<string, number>();
   for (const r of rows) {
     const date = r["Date"];
-    if (!date || !withinWindow(date, DAYS)) continue;
+    if (!date || !withinWindow(date, days)) continue;
     const code = (r["Country"] || "").trim();
     if (!code) continue;
     const v = num(pickCol(r, ["Daily User Installs", "Daily Device Installs"]));
@@ -188,7 +192,7 @@ export async function getTerritories(
 }
 
 /**
- * Top devices by install volume in the trailing 30 days. Play Console
+ * Top devices by install volume in the trailing window. Play Console
  * device strings are model codes ("hero", "marlin", ...) which are
  * unfriendly but at least show *something*; we leave them as-is rather
  * than guessing at human names.
@@ -196,14 +200,15 @@ export async function getTerritories(
 export async function getDevices(
   bucket: string,
   pkg: string,
+  days: number = DEFAULT_DAYS,
 ): Promise<DeviceStat[] | undefined> {
-  const rows = await readMonthlyCsvs(bucket, pkg, "device");
+  const rows = await readMonthlyCsvs(bucket, pkg, "device", days);
   if (!rows.length) return undefined;
 
   const byDevice = new Map<string, number>();
   for (const r of rows) {
     const date = r["Date"];
-    if (!date || !withinWindow(date, DAYS)) continue;
+    if (!date || !withinWindow(date, days)) continue;
     const dev = (r["Device"] || "").trim();
     if (!dev) continue;
     const v = num(pickCol(r, ["Daily User Installs", "Daily Device Installs"]));

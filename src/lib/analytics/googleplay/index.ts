@@ -1,4 +1,5 @@
 import type { AnalyticsProvider, AppMeta, AppSnapshot } from "../types";
+import { DEFAULT_PERIOD, periodDays, type Period } from "@/lib/period";
 import { loadCredentialsFromEnv } from "./credentials";
 import { getAppDetails, listGooglePlayApps } from "./apps";
 import { listCustomerReviews, summarizeRatings } from "./reviews";
@@ -94,8 +95,13 @@ async function listApps(): Promise<AppMeta[]> {
   return listGooglePlayApps();
 }
 
-async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
+async function fetchSnapshot(
+  appId: string,
+  opts: { period?: Period } = {},
+): Promise<AppSnapshot> {
   const warnings: string[] = [];
+  const period: Period = opts.period ?? DEFAULT_PERIOD;
+  const days = periodDays(period);
 
   const app = (await getAppDetails(appId)) || {
     id: appId,
@@ -147,7 +153,7 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
       return { crashes: undefined, performance: [], warning: undefined };
     }),
     bucket
-      ? getInstallsOverview(bucket, appId).catch((err) => {
+      ? getInstallsOverview(bucket, appId, days).catch((err) => {
           warnings.push(
             `Could not read installs CSV: ${err instanceof Error ? err.message : "unknown"}`,
           );
@@ -155,7 +161,7 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
         })
       : Promise.resolve(undefined),
     bucket
-      ? getTerritories(bucket, appId).catch((err) => {
+      ? getTerritories(bucket, appId, days).catch((err) => {
           warnings.push(
             `Could not read country CSV: ${err instanceof Error ? err.message : "unknown"}`,
           );
@@ -163,7 +169,7 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
         })
       : Promise.resolve(undefined),
     bucket
-      ? getDevices(bucket, appId).catch((err) => {
+      ? getDevices(bucket, appId, days).catch((err) => {
           warnings.push(
             `Could not read device CSV: ${err instanceof Error ? err.message : "unknown"}`,
           );
@@ -171,7 +177,7 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
         })
       : Promise.resolve(undefined),
     bucket
-      ? getFinanceFromExport(bucket, appId).catch((err) => {
+      ? getFinanceFromExport(bucket, appId, days).catch((err) => {
           warnings.push(
             `Could not read earnings CSV: ${err instanceof Error ? err.message : "unknown"}`,
           );
@@ -191,12 +197,13 @@ async function fetchSnapshot(appId: string): Promise<AppSnapshot> {
     );
   } else if (!installs && !territories && !devices && !finance) {
     warnings.push(
-      `Stats bucket (${bucket}) is configured but no CSVs landed in the trailing 30-day window for ${appId}. New buckets take ~24h to receive their first export, and the service account needs the "Storage Object Viewer" role on this bucket.`,
+      `Stats bucket (${bucket}) is configured but no CSVs landed in the trailing ${days}-day window for ${appId}. New buckets take ~24h to receive their first export, and the service account needs the "Storage Object Viewer" role on this bucket.`,
     );
   }
 
   return {
     app,
+    period,
     ratings,
     reviews: reviews.slice(0, 20),
     installs: installs?.installs,

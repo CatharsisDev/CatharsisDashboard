@@ -12,6 +12,8 @@ import {
   type WebTopPage,
   type WebTrafficSource,
 } from "@/lib/analytics/web";
+import { parsePeriod, periodLabel, type Period } from "@/lib/period";
+import PeriodToggle from "../_components/period-toggle";
 import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
 
 // /web is dynamic — every visit hits GA4 fresh. The shared loading.tsx now
@@ -115,20 +117,47 @@ function Panel({
 }
 
 // ---- daily traffic chart -----------------------------------------------
-function TrafficChart({ data }: { data: WebDailyPoint[] }) {
-  if (!data.length) return <EmptyNote>No daily traffic in the last 30 days.</EmptyNote>;
+function TrafficChart({ data, periodNote }: { data: WebDailyPoint[]; periodNote: string }) {
+  if (!data.length) return <EmptyNote>No daily traffic in {periodNote}.</EmptyNote>;
   const max = Math.max(1, ...data.map((p) => p.sessions));
-  const BAR_W = 16;
-  const BAR_GAP = 6;
+  const n = data.length;
+
+  // Bars stay narrow so the chart fits without horizontal scrolling for the
+  // common 7d / 30d windows; for 90d and 365d we let it scroll because the
+  // alternative (sub-pixel bars) looks like noise.
+  const BAR_W = n <= 7 ? 36 : n <= 30 ? 18 : n <= 90 ? 10 : 6;
+  const BAR_GAP = n <= 7 ? 14 : n <= 30 ? 10 : n <= 90 ? 6 : 3;
   const CHART_H = 140;
-  const width = data.length * (BAR_W + BAR_GAP);
+  const LABEL_Y = CHART_H + 22;
+  const width = n * (BAR_W + BAR_GAP);
+
+  // Date labels at ~50–60px font cadence look right at 9px monospace
+  // (~5px per char, "MM-DD" = 5 chars ≈ 25px wide). We pick a step that
+  // keeps two adjacent labels at least ~50px apart.
+  const MIN_LABEL_PX = 56;
+  const labelStep = Math.max(1, Math.ceil(MIN_LABEL_PX / (BAR_W + BAR_GAP)));
+
+  // Format depends on the window: short windows show day-month; longer
+  // windows show month-day with the year compressed away. Always anchor
+  // the *last* day so the most recent date sits flush right.
+  const formatLabel = (iso: string): string => {
+    // GA4 hands us YYYY-MM-DD; show MM-DD for everything 30d and under,
+    // and for longer windows show the day-of-month for the cadence we
+    // pick so the line stays scannable.
+    return iso.slice(5);
+  };
+
   return (
     <div className="overflow-x-auto cathars-scroll mt-5">
-      <svg width={width} height={CHART_H + 30} role="img" aria-label="Daily sessions">
+      <svg width={width} height={CHART_H + 36} role="img" aria-label="Daily sessions">
         {data.map((p, i) => {
           const h = (p.sessions / max) * CHART_H;
           const x = i * (BAR_W + BAR_GAP);
           const y = CHART_H - h;
+          // Show the date label every `labelStep` bars, anchored to the
+          // *last* bar so today's date is always visible. Reverse-mod
+          // counting: i counts back from n-1, so (n-1-i) % step === 0.
+          const showLabel = (n - 1 - i) % labelStep === 0;
           return (
             <g key={p.date}>
               <rect
@@ -136,20 +165,22 @@ function TrafficChart({ data }: { data: WebDailyPoint[] }) {
                 y={y}
                 width={BAR_W}
                 height={h}
-                rx={4}
+                rx={3}
                 fill="url(#webGrad)"
                 opacity={p.sessions === 0 ? 0.35 : 1}
               />
-              <text
-                x={x + BAR_W / 2}
-                y={CHART_H + 18}
-                textAnchor="middle"
-                fontSize="9"
-                fill="#8f7d8c"
-                fontFamily="monospace"
-              >
-                {p.date.slice(5)}
-              </text>
+              {showLabel ? (
+                <text
+                  x={x + BAR_W / 2}
+                  y={LABEL_Y}
+                  textAnchor="middle"
+                  fontSize="10"
+                  fill="#8f7d8c"
+                  fontFamily="monospace"
+                >
+                  {formatLabel(p.date)}
+                </text>
+              ) : null}
             </g>
           );
         })}
@@ -165,11 +196,17 @@ function TrafficChart({ data }: { data: WebDailyPoint[] }) {
 }
 
 // ---- panels ------------------------------------------------------------
-function TopPagesPanel({ pages }: { pages: WebTopPage[] | undefined }) {
+function TopPagesPanel({
+  pages,
+  periodNote,
+}: {
+  pages: WebTopPage[] | undefined;
+  periodNote: string;
+}) {
   return (
-    <Panel title="Top pages" note="last 30 days · GA4">
+    <Panel title="Top pages" note={`${periodNote} · GA4`}>
       {!pages || !pages.length ? (
-        <EmptyNote>No page-view data in the last 30 days.</EmptyNote>
+        <EmptyNote>No page-view data in {periodNote}.</EmptyNote>
       ) : (
         <div className="mt-4 overflow-x-auto cathars-scroll">
           <table className="w-full min-w-[520px] text-sm">
@@ -369,7 +406,7 @@ function WebHeader({ snapshot }: { snapshot: WebSnapshot }) {
       <div className="flex flex-col gap-1">
         <div className="font-display text-3xl text-[#f3e7d7]">{snapshot.hostname}</div>
         <div className="text-[11px] uppercase tracking-[0.22em] text-[#b9a7b6]">
-          GA4 property {snapshot.propertyId} · last 30 days
+          GA4 property {snapshot.propertyId} · {periodLabel(snapshot.period)}
         </div>
       </div>
     </div>
@@ -499,17 +536,26 @@ function WebSetup() {
 }
 
 // ---- page --------------------------------------------------------------
-export default async function WebAnalyticsPage() {
+export default async function WebAnalyticsPage({
+  searchParams,
+}: {
+  // Next 16: searchParams is a Promise. We resolve it before reading so the
+  // ?period=7d|30d|90d|365d query string drives the snapshot window.
+  searchParams: Promise<{ period?: string }>;
+}) {
   if (!isWebConfigured()) {
     return <WebSetup />;
   }
+
+  const { period: periodParam } = await searchParams;
+  const period: Period = parsePeriod(periodParam);
 
   let snapshot: WebSnapshot | null = null;
   let priorKpis: WebKpis | undefined;
   let error: string | null = null;
 
   try {
-    const result = await fetchWebSnapshot();
+    const result = await fetchWebSnapshot(period);
     snapshot = result.snapshot;
     priorKpis = result.priorKpis;
   } catch (err) {
@@ -517,16 +563,21 @@ export default async function WebAnalyticsPage() {
   }
 
   const nowTz = berlinTzLabel(new Date());
+  // Short label used inside KPI tile labels: "Active users (7d)".
+  const shortP = period.toUpperCase();
 
   return (
     <main className="min-h-screen text-[#f3e7d7]">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-10 px-6 py-10">
         {snapshot ? (
           <header className="card-glass rounded-[2rem] p-8 sm:p-10">
-            <WebHeader snapshot={snapshot} />
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <WebHeader snapshot={snapshot} />
+              <PeriodToggle active={period} basePath="/web" />
+            </div>
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <MetricTile
-                label="Active users (30d)"
+                label={`Active users (${shortP})`}
                 value={formatNumber(snapshot.kpis.activeUsers)}
                 sub={
                   snapshot.kpis.sessions !== undefined
@@ -536,7 +587,7 @@ export default async function WebAnalyticsPage() {
                 delta={deltaPct(snapshot.kpis.activeUsers, priorKpis?.activeUsers)}
               />
               <MetricTile
-                label="Page views (30d)"
+                label={`Page views (${shortP})`}
                 value={formatNumber(snapshot.kpis.pageViews)}
                 sub="screen_view + page_view"
                 delta={deltaPct(snapshot.kpis.pageViews, priorKpis?.pageViews)}
@@ -551,7 +602,7 @@ export default async function WebAnalyticsPage() {
                 )}
               />
               <MetricTile
-                label="Key events (30d)"
+                label={`Key events (${shortP})`}
                 value={formatNumber(snapshot.kpis.keyEvents)}
                 sub={
                   snapshot.kpis.keyEvents
@@ -574,11 +625,11 @@ export default async function WebAnalyticsPage() {
         {snapshot ? (
           <>
             <section className="flex flex-col gap-5">
-              <SectionHeader title="Traffic" note="last 30 days" />
+              <SectionHeader title="Traffic" note={periodLabel(period)} />
               <Panel title="Daily sessions" note="GA4 · property TZ">
-                <TrafficChart data={snapshot.daily || []} />
+                <TrafficChart data={snapshot.daily || []} periodNote={periodLabel(period)} />
               </Panel>
-              <TopPagesPanel pages={snapshot.topPages} />
+              <TopPagesPanel pages={snapshot.topPages} periodNote={periodLabel(period)} />
             </section>
 
             <section className="flex flex-col gap-5">

@@ -62,12 +62,12 @@ function withinDays(dateStr: string | undefined, days: number): boolean {
 }
 
 /**
- * Fetch all earnings CSVs that touch the trailing 30-day window. Some
- * months ago + this month suffice; we list both to avoid hardcoding a
- * filename pattern that depends on the developer account ID.
+ * Fetch all earnings CSVs that touch the trailing window. We list every
+ * month that overlaps it to avoid hardcoding a filename pattern that
+ * depends on the developer account ID.
  */
-async function listEarningsCsvs(bucket: string): Promise<string[]> {
-  const months = monthsSpanning(30);
+async function listEarningsCsvs(bucket: string, days: number): Promise<string[]> {
+  const months = monthsSpanning(days);
   const out: string[] = [];
   for (const ym of months) {
     const objects = await listBucket(bucket, `${EARNINGS_PREFIX}${ym}_`);
@@ -81,8 +81,9 @@ async function listEarningsCsvs(bucket: string): Promise<string[]> {
 export async function getFinanceFromExport(
   bucket: string,
   pkg: string,
+  days: number = 30,
 ): Promise<FinanceSummary | undefined> {
-  const objects = await listEarningsCsvs(bucket);
+  const objects = await listEarningsCsvs(bucket, days);
   if (!objects.length) return undefined;
 
   const allRows: EarningsRow[] = [];
@@ -94,12 +95,12 @@ export async function getFinanceFromExport(
 
   if (!allRows.length) return undefined;
 
-  // Filter to this package + the trailing 30-day window. Subscription rows
-  // use the SKU as Product ID, not the package, but the Description column
-  // typically embeds the package — we err on inclusion when the filter
-  // wouldn't match anything by checking either.
+  // Filter to this package + the trailing window. Subscription rows use the
+  // SKU as Product ID, not the package, but the Description column typically
+  // embeds the package — we err on inclusion when the filter wouldn't match
+  // anything by checking either.
   const relevant = allRows.filter((r) => {
-    if (!withinDays(r.date, 30)) return false;
+    if (!withinDays(r.date, days)) return false;
     const id = r.productId || "";
     return id === pkg || id.startsWith(`${pkg}.`) || id.startsWith(`${pkg}:`);
   });
