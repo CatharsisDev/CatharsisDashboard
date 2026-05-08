@@ -135,7 +135,14 @@ export default async function Home({
   const period = parsePeriod(periodParam);
   // Build the cutoff from `new Date()` rather than Date.now() so the React
   // server-component purity lint stays happy — they're equivalent at runtime.
-  const periodCutoffMs = new Date().getTime() - periodDays(period) * 24 * 3600 * 1000;
+  const nowMs = new Date().getTime();
+  const periodCutoffMs = nowMs - periodDays(period) * 24 * 3600 * 1000;
+  // Upload-Post's /total-impressions accepts YYYY-MM-DD start/end. Pass the
+  // active window so the impressions card actually responds to the toggle —
+  // the API otherwise defaults to ~30 days regardless of what the UI says.
+  const toYmd = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+  const impressionsStart = toYmd(periodCutoffMs);
+  const impressionsEnd = toYmd(nowMs);
 
   let history: HistoryItem[] = [];
   let scheduledPosts: Awaited<ReturnType<typeof normalizeScheduledPosts>> = [];
@@ -152,7 +159,7 @@ export default async function Home({
         getHistory(),
         getScheduledPosts(),
         getAnalytics(trackedPlatforms),
-        getTotalImpressions(),
+        getTotalImpressions({ startDate: impressionsStart, endDate: impressionsEnd }),
         getReadOnlyCalendarUrl(),
       ]);
 
@@ -215,7 +222,7 @@ export default async function Home({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="card-ember rounded-3xl p-5">
                 <div className="text-[10px] uppercase tracking-[0.22em] text-[#f3d9bc]">
-                  Total impressions
+                  Impressions · {periodLabel(period)}
                 </div>
                 <div className="font-display mt-3 text-5xl tracking-tight text-[#fff3e0]">
                   {formatNumber(totalImpressions)}

@@ -146,8 +146,23 @@ export async function getAnalytics(platforms: string[]) {
   return fetchJson<AnalyticsResponse>(`/analytics/${encodeURIComponent(PROFILE_USERNAME)}?${params.toString()}`);
 }
 
-export async function getTotalImpressions() {
-  return fetchJson<TotalImpressionsResponse>(`/uploadposts/total-impressions/${encodeURIComponent(PROFILE_USERNAME)}`);
+/**
+ * Upload-Post's `/total-impressions` endpoint returns a windowed impression
+ * count (default ~30 days when no params are passed). Accept optional
+ * start/end dates so the homepage's period selector can drive the window —
+ * Upload-Post echoes whichever range it actually used back in the response,
+ * which we display under the card.
+ *
+ * Date format must be YYYY-MM-DD (Upload-Post ignores time components and
+ * rejects ISO timestamps).
+ */
+export async function getTotalImpressions(opts: { startDate?: string; endDate?: string } = {}) {
+  const params = new URLSearchParams();
+  if (opts.startDate) params.set("start_date", opts.startDate);
+  if (opts.endDate) params.set("end_date", opts.endDate);
+  const qs = params.toString();
+  const path = `/uploadposts/total-impressions/${encodeURIComponent(PROFILE_USERNAME)}${qs ? `?${qs}` : ""}`;
+  return fetchJson<TotalImpressionsResponse>(path);
 }
 
 export async function getPostAnalytics(requestId: string) {
