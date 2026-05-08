@@ -23,6 +23,8 @@ import {
   type HistoryItem,
   type PostAnalyticsResponse,
 } from "@/lib/uploadpost";
+import type { TopPost, TopPostSortKey, TopPostsRankings } from "./page-types";
+import TopPostsTabs from "./_components/top-posts-tabs";
 
 const trackedPlatforms = ["tiktok", "instagram", "x", "youtube", "pinterest"];
 
@@ -86,25 +88,39 @@ function RecentPostRow({ item }: { item: HistoryItem }) {
   );
 }
 
-function getTopPosts(postAnalytics: PostAnalyticsResponse[]) {
+// We compute a normalized post object once per post and then expose multiple
+// rankings against the same set so the homepage can flip ranking tabs
+// (views / likes / comments / engagement) instantly client-side without
+// re-running these reductions.
+
+function computeTopPosts(postAnalytics: PostAnalyticsResponse[]): TopPost[] {
   return postAnalytics
-    .map((entry) => {
+    .map((entry): TopPost => {
       const platforms = Object.entries(entry.platforms || {});
-      const totalViews = platforms.reduce((sum, [, data]) => {
-        const metrics = data.post_metrics || {};
-        return sum + Number(metrics.views || metrics.impressions || metrics.reach || 0);
-      }, 0);
-      const totalEngagement = platforms.reduce((sum, [, data]) => {
-        const metrics = data.post_metrics || {};
-        return (
-          sum +
-          Number(metrics.likes || 0) +
-          Number(metrics.comments || 0) +
-          Number(metrics.shares || 0) +
-          Number(metrics.saves || 0) +
-          Number(metrics.favorites || 0)
-        );
-      }, 0);
+      // Per-metric helper: sum a metric across every platform on this post,
+      // accepting any of a list of synonyms (Upload-Post returns different
+      // keys depending on the platform — e.g. likes vs favorites).
+      const sumMetric = (...keys: string[]): number =>
+        platforms.reduce((sum, [, data]) => {
+          const metrics = data.post_metrics || {};
+          let v = 0;
+          for (const k of keys) {
+            const candidate = Number(metrics[k] || 0);
+            if (candidate > v) v = candidate; // prefer the largest synonym hit
+          }
+          return sum + v;
+        }, 0);
+
+      const totalViews = sumMetric("views", "impressions", "reach");
+      const totalLikes = sumMetric("likes", "favorites", "reactions");
+      const totalComments = sumMetric("comments", "replies");
+      const totalShares = sumMetric("shares", "reposts", "retweets");
+      const totalSaves = sumMetric("saves", "bookmarks");
+      // "Engagement" is the union of every interaction type — likes,
+      // comments, shares, saves. Mirrors what most platform "best of"
+      // signals use internally.
+      const totalEngagement =
+        totalLikes + totalComments + totalShares + totalSaves;
 
       return {
         requestId: entry.post?.request_id || "-",
@@ -112,13 +128,49 @@ function getTopPosts(postAnalytics: PostAnalyticsResponse[]) {
         mediaType: entry.post?.media_type || "post",
         uploadedAt: entry.post?.upload_timestamp,
         totalViews,
+        totalLikes,
+        totalComments,
+        totalShares,
+        totalSaves,
         totalEngagement,
         platforms,
       };
     })
-    .filter((post) => post.totalViews > 0 || post.totalEngagement > 0)
-    .sort((a, b) => b.totalViews - a.totalViews)
-    .slice(0, 6);
+    .filter(
+      (p) =>
+        p.totalViews > 0 ||
+        p.totalLikes > 0 ||
+        p.totalComments > 0 ||
+        p.totalEngagement > 0,
+    );
+}
+
+function rankBy(posts: TopPost[], key: TopPostSortKey): TopPost[] {
+  const metric = (p: TopPost): number => {
+    switch (key) {
+      case "views":
+        return p.totalViews;
+      case "likes":
+        return p.totalLikes;
+      case "comments":
+        return p.totalComments;
+      case "engagement":
+        return p.totalEngagement;
+    }
+  };
+  return [...posts].sort((a, b) => metric(b) - metric(a)).slice(0, 6);
+}
+
+function computeTopPostsRankings(
+  postAnalytics: PostAnalyticsResponse[],
+): TopPostsRankings {
+  const all = computeTopPosts(postAnalytics);
+  return {
+    views: rankBy(all, "views"),
+    likes: rankBy(all, "likes"),
+    comments: rankBy(all, "comments"),
+    engagement: rankBy(all, "engagement"),
+  };
 }
 
 export default async function Home({
@@ -150,7 +202,12 @@ export default async function Home({
   let totalImpressions = 0;
   let totalImpressionsRange = "";
   let calendarUrl = "";
-  let topPosts: ReturnType<typeof getTopPosts> = [];
+  let topPostsRankings: TopPostsRankings = {
+    views: [],
+    likes: [],
+    comments: [],
+    engagement: [],
+  };
   let error: string | null = null;
 
   try {
@@ -176,7 +233,7 @@ export default async function Home({
     const postAnalytics = await Promise.all(
       uniqueRequestIds.map((requestId) => getPostAnalytics(requestId)),
     );
-    topPosts = getTopPosts(postAnalytics);
+    topPostsRankings = computeTopPostsRankings(postAnalytics);
   } catch (err) {
     error = err instanceof Error ? err.message : "Unknown error loading Upload-Post data";
   }
@@ -279,51 +336,7 @@ export default async function Home({
             </div>
             <span className="text-xs text-[#b9a7b6]">Posts with real post-level analytics</span>
           </div>
-          {topPosts.length ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {topPosts.map((post) => (
-                <article
-                  key={post.requestId}
-                  className="rounded-3xl border border-white/5 bg-black/15 p-5"
-                >
-                  <div className="text-[10px] uppercase tracking-[0.2em] text-[#b489c7]">
-                    {post.mediaType}
-                  </div>
-                  <h3 className="font-display mt-2 text-xl text-[#f3e7d7]">{post.title}</h3>
-                  <div className="mt-2 font-mono text-xs tabular-nums text-[#b9a7b6]">
-                    {formatDate(post.uploadedAt)}
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <StatBox label="Total views" value={post.totalViews} />
-                    <StatBox label="Engagement" value={post.totalEngagement} />
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#d9c9bc]">
-                    {post.platforms.map(([platform, data]) => {
-                      const metrics = data.post_metrics || {};
-                      const views = Number(
-                        metrics.views || metrics.impressions || metrics.reach || 0,
-                      );
-                      return (
-                        <span
-                          key={platform}
-                          className="soft-pill rounded-full px-3 py-1 capitalize"
-                        >
-                          {platform}: {formatNumber(views)}
-                        </span>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-3 font-mono text-[10px] text-[#8f7d8c]">
-                    req · {post.requestId}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-white/10 px-4 py-10 text-center text-[#b9a7b6]">
-              No post analytics available yet.
-            </div>
-          )}
+          <TopPostsTabs rankings={topPostsRankings} />
         </section>
 
         {/* ---------- recent uploads ---------- */}
