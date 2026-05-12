@@ -107,11 +107,24 @@ export async function getInstallsOverview(
     );
     uninstallsByDate.set(date, (uninstallsByDate.get(date) || 0) + uninst);
 
-    // Active install base — Play Console publishes this as "Active Device
-    // Installs" (cumulative count of devices with the app installed). We
-    // store the per-date value so the latest one wins after sort.
+    // Active install base — Play Console writes a few different columns
+    // depending on the export schema generation. The Play Console UI's
+    // "Install base" widget tends to match user-account variants where they
+    // exist (e.g. "Active User Installs"), and falls back to the device
+    // variant otherwise. We try the user variants first so the dashboard
+    // tracks the UI number when both are present.
     const active = num(
-      pickCol(r, ["Active Device Installs", "Current Device Installs"]),
+      pickCol(r, [
+        // User-account based — matches Play Console UI when present.
+        "Active User Installs",
+        "Total User Installs",
+        // Device-based — broader inclusion, may differ from UI count.
+        "Active Device Installs",
+        "Current Device Installs",
+        // Older / regional schemas sometimes label it differently.
+        "Install base",
+        "Active installs",
+      ]),
     );
     if (active > 0) activeByDate.set(date, active);
   }

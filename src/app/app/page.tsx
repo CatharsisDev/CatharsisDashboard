@@ -1270,12 +1270,12 @@ export default async function AppAnalyticsPage({
                       <div className="grid gap-5 lg:grid-cols-2">
                         <UserLossPanel uninstalls={snapshot.uninstalls} />
                         {snapshot.activeInstalls !== undefined ? (
-                          <Panel title="Total installs" note="current install base">
+                          <Panel title="Total installs" note="install base · Play CSV export">
                             <div className="font-display mt-2 text-5xl">
                               {formatNumber(snapshot.activeInstalls)}
                             </div>
                             <div className="mt-2 text-xs text-[#b9a7b6]">
-                              devices with the app currently installed
+                              devices/users with the app currently installed
                             </div>
                             {snapshot.installs && snapshot.uninstalls ? (
                               <div className="mt-4 text-xs text-[#d9c9bc]">
@@ -1286,6 +1286,25 @@ export default async function AppAnalyticsPage({
                                 </span>
                               </div>
                             ) : null}
+                            {/* Play Console UI's "Install base" widget is fed
+                                by a different aggregation than the CSV export
+                                column we read. If they disagree, the UI is
+                                more authoritative — link out so it's easy to
+                                cross-check. CSVs also lag ~24–48h. */}
+                            <div className="mt-4 border-t border-white/5 pt-3 text-[11px] text-[#8f7d8c]">
+                              Source: latest{" "}
+                              <span className="font-mono">Active User Installs</span> /{" "}
+                              <span className="font-mono">Active Device Installs</span>{" "}
+                              column from the Play Console Statistics CSV (lags ~24–48h).{" "}
+                              <a
+                                href="https://play.google.com/console/u/0/developers"
+                                target="_blank"
+                                rel="noreferrer noopener"
+                                className="underline decoration-dotted underline-offset-2 hover:text-[#e7b894]"
+                              >
+                                Cross-check in Play Console →
+                              </a>
+                            </div>
                           </Panel>
                         ) : null}
                       </div>
