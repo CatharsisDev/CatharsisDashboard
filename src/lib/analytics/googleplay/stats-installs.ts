@@ -108,24 +108,30 @@ export async function getInstallsOverview(
     uninstallsByDate.set(date, (uninstallsByDate.get(date) || 0) + uninst);
 
     // Active install base — Play Console writes a few different columns
-    // depending on the export schema generation. The Play Console UI's
-    // "Install base" widget tends to match user-account variants where they
-    // exist (e.g. "Active User Installs"), and falls back to the device
-    // variant otherwise. We try the user variants first so the dashboard
-    // tracks the UI number when both are present.
-    const active = num(
-      pickCol(r, [
-        // User-account based — matches Play Console UI when present.
-        "Active User Installs",
-        "Total User Installs",
-        // Device-based — broader inclusion, may differ from UI count.
-        "Active Device Installs",
-        "Current Device Installs",
-        // Older / regional schemas sometimes label it differently.
-        "Install base",
-        "Active installs",
-      ]),
-    );
+    // depending on the export schema generation. Play Console UI's "Install
+    // base" widget tends to match user-account variants where they exist
+    // (e.g. "Active User Installs"), and falls back to the device variant
+    // otherwise.
+    //
+    // IMPORTANT: don't just take the first non-empty candidate — some Play
+    // Console exports include header columns that are present but always
+    // zero (e.g. when Google reserves a column for a feature the developer
+    // hasn't opted into). If we picked "first present" we'd return 0 and
+    // hide the install base entirely. Instead, scan every candidate and
+    // keep the largest non-zero value.
+    const candidates = [
+      "Active User Installs",
+      "Total User Installs",
+      "Active Device Installs",
+      "Current Device Installs",
+      "Install base",
+      "Active installs",
+    ];
+    let active = 0;
+    for (const col of candidates) {
+      const v = num(r[col]);
+      if (v > active) active = v;
+    }
     if (active > 0) activeByDate.set(date, active);
   }
 
