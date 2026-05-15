@@ -513,6 +513,23 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
                           {formatScheduledBerlinTime(ev)}
                         </span>
                         <span className="truncate">{title}</span>
+                        {/* Tail of platform dots — chip color reflects only
+                            platforms[0], so without these the other platforms
+                            on the post would be invisible (e.g. Pinterest
+                            often comes after TikTok/IG/X/YT in the array). */}
+                        {(ev.platforms || []).length > 1 ? (
+                          <span className="ml-auto flex shrink-0 items-center gap-0.5">
+                            {(ev.platforms || []).slice(1).map((pl) => (
+                              <span
+                                key={pl}
+                                className="h-1 w-1 rounded-full"
+                                style={{ background: platformTone(pl).dot }}
+                                aria-label={platformTone(pl).label}
+                                title={platformTone(pl).label}
+                              />
+                            ))}
+                          </span>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -590,13 +607,18 @@ export default function ContentCalendar({ posts }: { posts: ScheduledPost[] }) {
                           <span className="font-mono text-[10px] opacity-80">
                             {formatScheduledBerlinTime(ev)}
                           </span>
-                          <span className="ml-auto flex gap-1">
-                            {(ev.platforms || []).slice(0, 3).map((pl) => (
+                          <span className="ml-auto flex flex-wrap items-center justify-end gap-1">
+                            {/* Show every platform's dot, not just the first
+                                three — a post on TikTok+IG+X+YouTube+Pinterest
+                                otherwise dropped Pinterest entirely because
+                                it was always 4th or 5th in the array. */}
+                            {(ev.platforms || []).map((pl) => (
                               <span
                                 key={pl}
                                 className="h-1.5 w-1.5 rounded-full"
                                 style={{ background: platformTone(pl).dot }}
                                 aria-label={platformTone(pl).label}
+                                title={platformTone(pl).label}
                               />
                             ))}
                           </span>

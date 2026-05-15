@@ -1,6 +1,7 @@
 import ContentCalendar from "./content-calendar";
 import PeriodToggle from "./_components/period-toggle";
 import InfoTooltip from "./_components/info-tooltip";
+import PlatformRanking from "./_components/platform-ranking";
 import { parsePeriod, periodDays, periodLabel } from "@/lib/period";
 import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
 
@@ -58,6 +59,34 @@ function StatBox({
       <div className="mt-2 break-words font-display text-3xl text-[#f3e7d7]">
         {formatNumber(value)}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Smaller sibling of StatBox for secondary metrics (reach / profile views /
+ * shares / saves). Same corner-badge layout so the (?) icon doesn't crowd
+ * the label, but with tighter padding and smaller type so these don't
+ * compete visually with the primary stats above them.
+ */
+function MiniStatBox({
+  label,
+  value,
+  info,
+}: {
+  label: string;
+  value: number;
+  info?: string;
+}) {
+  return (
+    <div className="relative rounded-2xl border border-white/5 bg-black/15 px-3 py-2.5">
+      {info ? (
+        <span className="absolute right-1.5 top-1.5">
+          <InfoTooltip text={info} position="left" />
+        </span>
+      ) : null}
+      <div className="pr-5 text-[9px] uppercase tracking-[0.18em] text-[#b9a7b6]">{label}</div>
+      <div className="mt-1 font-display text-lg text-[#f3e7d7]">{formatNumber(value)}</div>
     </div>
   );
 }
@@ -201,23 +230,27 @@ function AnalyticsCard({
           info={platformStatInfo(metric.platform, "comments")}
         />
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-[#d9c9bc] sm:grid-cols-4">
-        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
-          <span>Reach: {formatNumber(summary.reach)}</span>
-          <InfoTooltip text={platformStatInfo(metric.platform, "reach")} />
-        </span>
-        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
-          <span>Profile views: {formatNumber(summary.profileViews)}</span>
-          <InfoTooltip text={platformStatInfo(metric.platform, "profileViews")} />
-        </span>
-        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
-          <span>Shares: {formatNumber(summary.shares)}</span>
-          <InfoTooltip text={platformStatInfo(metric.platform, "shares")} />
-        </span>
-        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
-          <span>Saves: {formatNumber(summary.saves)}</span>
-          <InfoTooltip text={platformStatInfo(metric.platform, "saves")} />
-        </span>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <MiniStatBox
+          label="Reach"
+          value={summary.reach}
+          info={platformStatInfo(metric.platform, "reach")}
+        />
+        <MiniStatBox
+          label="Profile views"
+          value={summary.profileViews}
+          info={platformStatInfo(metric.platform, "profileViews")}
+        />
+        <MiniStatBox
+          label="Shares"
+          value={summary.shares}
+          info={platformStatInfo(metric.platform, "shares")}
+        />
+        <MiniStatBox
+          label="Saves"
+          value={summary.saves}
+          info={platformStatInfo(metric.platform, "saves")}
+        />
       </div>
     </section>
   );
@@ -510,6 +543,9 @@ export default async function Home({
             ))}
           </div>
         </section>
+
+        {/* ---------- platform leaderboard ---------- */}
+        <PlatformRanking analytics={analytics} />
 
         {/* ---------- content calendar ---------- */}
         <ContentCalendar posts={scheduledPosts} />
