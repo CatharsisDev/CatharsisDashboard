@@ -77,6 +77,16 @@ export interface InstallsOverview {
   installs?: TimeSeriesStats;
   uninstalls?: TimeSeriesStats;
   activeInstalls?: number;
+  /**
+   * Diagnostic dump of the latest CSV row's columns + values. Surfaced as a
+   * warning so the user can copy the raw column names back to us when our
+   * `activeInstalls` disagrees with the Play Console UI's "Install base".
+   * Only populated when the CSV actually has rows in the window.
+   */
+  latestRowDebug?: {
+    date: string;
+    columns: Array<{ name: string; value: string }>;
+  };
 }
 
 export async function getInstallsOverview(
@@ -163,8 +173,26 @@ export async function getInstallsOverview(
     ? activeSorted[activeSorted.length - 1][1]
     : undefined;
 
+  // Latest-row diagnostic. We grab the row whose date matches the same one
+  // we picked the activeInstalls value from, so the dumped columns line up
+  // with the number we're displaying.
+  let latestRowDebug: InstallsOverview["latestRowDebug"];
+  if (activeSorted.length) {
+    const latestDate = activeSorted[activeSorted.length - 1][0];
+    const latestRow = rows.find((r) => r["Date"] === latestDate);
+    if (latestRow) {
+      latestRowDebug = {
+        date: latestDate,
+        columns: Object.entries(latestRow).map(([name, value]) => ({
+          name,
+          value: value ?? "",
+        })),
+      };
+    }
+  }
+
   if (!installs && !uninstalls && activeInstalls === undefined) return undefined;
-  return { installs, uninstalls, activeInstalls };
+  return { installs, uninstalls, activeInstalls, latestRowDebug };
 }
 
 /**

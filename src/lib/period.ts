@@ -2,15 +2,27 @@
 // Lives outside any analytics-provider folder because it's pure UX wiring —
 // the providers just consume the resolved day count.
 
-export type Period = "7d" | "30d" | "90d" | "365d";
+export type Period = "7d" | "30d" | "90d" | "365d" | "all";
 
-export const PERIODS: Period[] = ["7d", "30d", "90d", "365d"];
+export const PERIODS: Period[] = ["7d", "30d", "90d", "365d", "all"];
 export const DEFAULT_PERIOD: Period = "30d";
+
+/**
+ * Maximum day count we ever ask a provider for. Acts as the "all" sentinel —
+ * the Play Console export bucket only retains a finite history anyway (and
+ * Apple's Sales & Trends caps individual reports daily), so 10 years is
+ * effectively unbounded for our purposes.
+ */
+export const ALL_PERIOD_DAYS = 3650;
 
 /**
  * Map a Period to the trailing day count it represents. Used by every
  * provider whose time-window is expressed in days (App Store Sales &
  * Trends, Play Console Stats CSVs, Play Reporting vitals, etc).
+ *
+ * "all" returns a very large number so the underlying filters effectively
+ * include every row the provider can return. Providers naturally clamp by
+ * whatever data they actually have (no API exposes pre-bucket history).
  */
 export function periodDays(p: Period): number {
   switch (p) {
@@ -22,6 +34,8 @@ export function periodDays(p: Period): number {
       return 90;
     case "365d":
       return 365;
+    case "all":
+      return ALL_PERIOD_DAYS;
   }
 }
 
@@ -31,14 +45,21 @@ export function periodDays(p: Period): number {
  * and gets us property-TZ correctness for free.
  */
 export function periodToGa4Range(p: Period): { startDate: string; endDate: string } {
+  // GA4's earliest acceptable date is "the GA4 property creation date", and
+  // it accepts long lookbacks fine. For "all" we ask for everything since
+  // 2020-01-01 — well before any property under this account existed.
+  if (p === "all") return { startDate: "2020-01-01", endDate: "today" };
   return { startDate: `${periodDays(p)}daysAgo`, endDate: "today" };
 }
 
 /**
  * Same idea but for the previous period (used to compute period-over-period
  * deltas on KPI tiles). For a 30d window that's "60daysAgo to 31daysAgo".
+ * For "all" we don't compute a prior — there isn't one — so callers get an
+ * empty range that returns no rows.
  */
 export function periodToGa4PriorRange(p: Period): { startDate: string; endDate: string } {
+  if (p === "all") return { startDate: "2020-01-01", endDate: "2020-01-01" };
   const days = periodDays(p);
   return { startDate: `${days * 2}daysAgo`, endDate: `${days + 1}daysAgo` };
 }
@@ -58,11 +79,14 @@ export function periodLabel(p: Period): string {
       return "last 90 days";
     case "365d":
       return "last 365 days";
+    case "all":
+      return "all available data";
   }
 }
 
 /** Short pill label rendered inside the toggle. */
 export function periodShortLabel(p: Period): string {
+  if (p === "all") return "All";
   return p.toUpperCase().replace("D", "d");
 }
 

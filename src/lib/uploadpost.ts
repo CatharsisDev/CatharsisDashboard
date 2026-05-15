@@ -138,10 +138,25 @@ export async function getScheduledPosts() {
   return fetchJson<ScheduleResponse>("/uploadposts/schedule");
 }
 
-export async function getAnalytics(platforms: string[]) {
+/**
+ * Per-platform profile analytics. By default each platform's API returns
+ * whatever window it considers "headline" — TikTok = 28d, IG = 7/28d,
+ * YouTube = lifetime, Pinterest = 30d, X = varies. Pass `startDate`/`endDate`
+ * (YYYY-MM-DD) to ask Upload-Post to constrain to a window where the
+ * underlying platform API supports it; platforms that don't support
+ * windowing (e.g. YouTube lifetime) still return their default scope, which
+ * is why the per-platform cards may not sum to the page-wide impressions
+ * total.
+ */
+export async function getAnalytics(
+  platforms: string[],
+  opts: { startDate?: string; endDate?: string } = {},
+) {
   const params = new URLSearchParams({
     platforms: platforms.join(","),
   });
+  if (opts.startDate) params.set("start_date", opts.startDate);
+  if (opts.endDate) params.set("end_date", opts.endDate);
 
   return fetchJson<AnalyticsResponse>(`/analytics/${encodeURIComponent(PROFILE_USERNAME)}?${params.toString()}`);
 }

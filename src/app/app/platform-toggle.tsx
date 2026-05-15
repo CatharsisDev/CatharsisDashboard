@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 // The platform toggle is rendered inside the server page's header. Clicking a
@@ -8,6 +8,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 // transition — same pattern as the calendar refresh button, so the switch
 // feels instant and the pending pill gets a subtle pulse while the new
 // snapshot streams in from the server.
+//
+// We debounce navigation so rapid platform flips don't fire two full
+// snapshot fan-outs (ASC for iOS, Play Developer + Reporting + Stats CSVs
+// for Android). Both providers have per-key rate limits that bite when
+// you toggle quickly.
+
+const DEBOUNCE_MS = 250;
 
 type Platform = "ios" | "android";
 
@@ -30,6 +37,25 @@ export default function PlatformToggle({
   const router = useRouter();
   const search = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  // Most-recently clicked platform — drives the pill highlight immediately
+  // while the real navigation waits for the debounce window.
+  const [pending, setPending] = useState<Platform>(active);
+  // Track the last prop value we synced to so we can re-adjust `pending`
+  // when the URL changes from outside. React's recommended "adjust state on
+  // prop change" pattern, done during render rather than in useEffect.
+  const [lastSyncedActive, setLastSyncedActive] = useState<Platform>(active);
+  if (active !== lastSyncedActive) {
+    setLastSyncedActive(active);
+    setPending(active);
+  }
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    },
+    [],
+  );
 
   const configured: Record<Platform, boolean> = {
     ios: iosConfigured,
@@ -37,13 +63,17 @@ export default function PlatformToggle({
   };
 
   const setPlatform = (p: Platform) => {
-    if (p === active) return;
-    // Preserve any other query params the user might have on the page.
-    const params = new URLSearchParams(search?.toString() || "");
-    params.set("platform", p);
-    startTransition(() => {
-      router.push(`/app?${params.toString()}`);
-    });
+    if (p === pending) return;
+    setPending(p);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      // Preserve any other query params the user might have on the page.
+      const params = new URLSearchParams(search?.toString() || "");
+      params.set("platform", p);
+      startTransition(() => {
+        router.push(`/app?${params.toString()}`);
+      });
+    }, DEBOUNCE_MS);
   };
 
   return (
@@ -53,7 +83,8 @@ export default function PlatformToggle({
       className="soft-pill flex items-center gap-1 rounded-full p-1 text-xs"
     >
       {OPTIONS.map((o) => {
-        const isActive = active === o.key;
+        const isActive = pending === o.key;
+        const isLoaded = active === o.key;
         const isConfigured = configured[o.key];
         return (
           <button
@@ -71,7 +102,7 @@ export default function PlatformToggle({
               isActive
                 ? "bg-[#e7b894] text-[#2a1220]"
                 : "text-[#d9c9bc] hover:bg-white/10",
-              isPending && !isActive ? "opacity-60" : "",
+              (isPending || !isLoaded) && isActive ? "opacity-80" : "",
             ].join(" ")}
           >
             <span className="mr-1.5 hidden sm:inline">{o.label}</span>

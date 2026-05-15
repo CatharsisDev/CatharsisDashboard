@@ -195,9 +195,37 @@ async function fetchSnapshot(
     warnings.push(
       "Set GOOGLEPLAY_STATS_BUCKET (the gs:// URI from Play Console → Download reports) to fill installs, revenue, territories and devices. The empty panels below explain where each one comes from.",
     );
-  } else if (!installs && !territories && !devices && !finance) {
+  } else if (
+    // Only complain about an empty window if absolutely nothing landed —
+    // including no install-base snapshot. The previous condition fired even
+    // when partial data was present (e.g. installs populated, but territory
+    // /finance empty), which confused users by showing a "no CSVs" warning
+    // next to populated panels.
+    !installs?.installs &&
+    !installs?.uninstalls &&
+    installs?.activeInstalls === undefined &&
+    !territories &&
+    !devices &&
+    !finance
+  ) {
     warnings.push(
       `Stats bucket (${bucket}) is configured but no CSVs landed in the trailing ${days}-day window for ${appId}. New buckets take ~24h to receive their first export, and the service account needs the "Storage Object Viewer" role on this bucket.`,
+    );
+  }
+
+  // Opt-in install-base diagnostic: when GOOGLEPLAY_DEBUG_INSTALLS is set,
+  // surface every column name and value from the latest CSV row alongside
+  // the install-base value we picked. Helps pin down why our number diverges
+  // from Play Console UI's "Install base" widget. Off by default so we don't
+  // dump CSV internals onto the page for every user.
+  if (process.env.GOOGLEPLAY_DEBUG_INSTALLS && installs?.latestRowDebug) {
+    const dump = installs.latestRowDebug;
+    const pretty = dump.columns
+      .filter((c) => c.value !== "")
+      .map((c) => `${c.name}=${c.value}`)
+      .join(" · ");
+    warnings.push(
+      `[DEBUG] Install-base CSV row for ${dump.date}: ${pretty}`,
     );
   }
 

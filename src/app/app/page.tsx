@@ -5,7 +5,7 @@ import PeriodToggle from "../_components/period-toggle";
 import { getProvider } from "@/lib/analytics";
 import { inspectGooglePlayConfig } from "@/lib/analytics/googleplay";
 import type { Platform } from "@/lib/analytics/types";
-import { parsePeriod, periodLabel, periodShortLabel } from "@/lib/period";
+import { parsePeriod, periodDays, periodLabel, periodShortLabel } from "@/lib/period";
 import type {
   ActiveDevicesSummary,
   AppMeta,
@@ -305,10 +305,16 @@ function InstallsPanel({
   }
   const avg = installs.total / Math.max(1, installs.points.length);
   return (
-    <Panel title="Installs" note="Sales & Trends · daily">
+    <Panel
+      title="New installs"
+      note={platform === "ios" ? "Sales & Trends · daily" : "Play Console · daily"}
+    >
       <div className="font-display mt-2 text-4xl">{formatNumber(installs.total)}</div>
       <div className="mt-1 text-xs text-[#b9a7b6]">
-        last {installs.points.length} days · avg {formatNumber(avg)}/day
+        {/* The "first-time download event" framing distinguishes this from the
+            Total installs card below it — they're not redundant, just different
+            kinds of number (flow vs snapshot). */}
+        new install events · {installs.points.length} days · avg {formatNumber(avg)}/day
       </div>
       <div className="mt-5">
         <InstallsChart data={installs} />
@@ -327,10 +333,10 @@ function UserLossPanel({ uninstalls }: { uninstalls: TimeSeriesStats | undefined
   if (!uninstalls) return null;
   const avg = uninstalls.total / Math.max(1, uninstalls.points.length);
   return (
-    <Panel title="User loss" note="uninstalls · daily">
+    <Panel title="Uninstalls" note="user loss · daily">
       <div className="font-display mt-2 text-4xl">{formatNumber(uninstalls.total)}</div>
       <div className="mt-1 text-xs text-[#b9a7b6]">
-        last {uninstalls.points.length} days · avg {avg.toFixed(2)}/day
+        uninstall events · {uninstalls.points.length} days · avg {avg.toFixed(2)}/day
       </div>
       <div className="mt-5">
         <InstallsChart data={uninstalls} />
@@ -1270,22 +1276,60 @@ export default async function AppAnalyticsPage({
                       <div className="grid gap-5 lg:grid-cols-2">
                         <UserLossPanel uninstalls={snapshot.uninstalls} />
                         {snapshot.activeInstalls !== undefined ? (
-                          <Panel title="Total installs" note="install base · Play CSV export">
+                          <Panel title="Install base" note="snapshot · today">
                             <div className="font-display mt-2 text-5xl">
                               {formatNumber(snapshot.activeInstalls)}
                             </div>
                             <div className="mt-2 text-xs text-[#b9a7b6]">
                               devices/users with the app currently installed
                             </div>
-                            {snapshot.installs && snapshot.uninstalls ? (
-                              <div className="mt-4 text-xs text-[#d9c9bc]">
-                                Net {periodLabel(period)}:{" "}
-                                <span className="font-mono tabular-nums text-[#fff3e0]">
-                                  {snapshot.installs.total - snapshot.uninstalls.total >= 0 ? "+" : ""}
-                                  {formatNumber(snapshot.installs.total - snapshot.uninstalls.total)}
-                                </span>
-                              </div>
-                            ) : null}
+                            {snapshot.installs && snapshot.uninstalls ? (() => {
+                              // The math line should reflect the actual data
+                              // span, not the user-selected window — Play
+                              // Console only exports CSVs from the day the
+                              // bucket was set up, so for a young app a "365d"
+                              // selection might only have ~190 days of data.
+                              // Labeling it "365 days" then is misleading
+                              // (the user goes "but the app wasn't even
+                              // published a year ago").
+                              const availableDays = Math.max(
+                                snapshot.installs.points.length,
+                                snapshot.uninstalls.points.length,
+                              );
+                              const requestedDays = periodDays(period);
+                              const clamped = availableDays < requestedDays;
+                              return (
+                                <div className="mt-4 rounded-xl bg-black/20 px-3 py-2.5 text-[11px] text-[#d9c9bc]">
+                                  Over {availableDays} days of available data
+                                  {clamped ? (
+                                    <span className="text-[#8f7d8c]">
+                                      {" "}(requested {requestedDays})
+                                    </span>
+                                  ) : null}
+                                  :{" "}
+                                  <span className="font-mono tabular-nums text-[#fff3e0]">
+                                    +{formatNumber(snapshot.installs.total)}
+                                  </span>{" "}
+                                  new −{" "}
+                                  <span className="font-mono tabular-nums text-[#fff3e0]">
+                                    {formatNumber(snapshot.uninstalls.total)}
+                                  </span>{" "}
+                                  lost ={" "}
+                                  <span className="font-mono tabular-nums text-[#fff3e0]">
+                                    {snapshot.installs.total - snapshot.uninstalls.total >= 0 ? "+" : ""}
+                                    {formatNumber(snapshot.installs.total - snapshot.uninstalls.total)}
+                                  </span>{" "}
+                                  net
+                                  {clamped ? (
+                                    <div className="mt-1 text-[#8f7d8c]">
+                                      Play Console&apos;s export bucket only goes back
+                                      to when it was first set up — earlier history
+                                      isn&apos;t available via the CSV.
+                                    </div>
+                                  ) : null}
+                                </div>
+                              );
+                            })() : null}
                             {/* Play Console UI's "Install base" widget is fed
                                 by a different aggregation than the CSV export
                                 column we read. If they disagree, the UI is

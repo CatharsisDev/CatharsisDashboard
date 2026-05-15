@@ -47,16 +47,31 @@ function StatBox({ label, value }: { label: string; value: number }) {
   );
 }
 
-function AnalyticsCard({ metric }: { metric: AnalyticsMetric }) {
+function AnalyticsCard({
+  metric,
+  periodLabelText,
+}: {
+  metric: AnalyticsMetric;
+  /** Active dashboard window (e.g. "last 7 days"). Platforms that honor
+      windowing return numbers for this range; platforms that don't (YouTube
+      lifetime, etc.) return their own default scope. */
+  periodLabelText: string;
+}) {
   const summary = summarizeAnalytics(metric);
 
   return (
     <section className="card-glass rounded-3xl p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
+      <div className="mb-1 flex items-center justify-between gap-3">
         <h2 className="font-display text-2xl capitalize text-[#f3e7d7]">{metric.platform}</h2>
         <span className="pill-ember rounded-full px-3 py-1 text-[10px] uppercase tracking-[0.16em]">
           {metric.metric_type || "analytics"}
         </span>
+      </div>
+      {/* Make the scope explicit on each card so the user doesn't expect the
+          per-platform numbers to sum to the page's headline impressions
+          (they often won't — see the disclaimer in the section header). */}
+      <div className="mb-4 text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
+        Followers = snapshot · others = {periodLabelText} (where platform supports it)
       </div>
       <div className="grid grid-cols-2 gap-3">
         <StatBox label="Followers" value={summary.followers} />
@@ -215,7 +230,15 @@ export default async function Home({
       await Promise.all([
         getHistory(),
         getScheduledPosts(),
-        getAnalytics(trackedPlatforms),
+        // Same window as the /total-impressions call — Upload-Post relays the
+        // date params to each platform's API where the platform supports
+        // windowing. Platforms that ignore date params (YouTube lifetime,
+        // some X tiers) still come back with their default scope, which is
+        // why the cards may not sum to the headline impressions number.
+        getAnalytics(trackedPlatforms, {
+          startDate: impressionsStart,
+          endDate: impressionsEnd,
+        }),
         getTotalImpressions({ startDate: impressionsStart, endDate: impressionsEnd }),
         getReadOnlyCalendarUrl(),
       ]);
@@ -284,7 +307,9 @@ export default async function Home({
                 <div className="font-display mt-3 text-5xl tracking-tight text-[#fff3e0]">
                   {formatNumber(totalImpressions)}
                 </div>
-                <div className="mt-2 text-sm text-[#f3d9bc]/80">Across connected platforms</div>
+                <div className="mt-2 text-sm text-[#f3d9bc]/80">
+                  Post-level sum across connected platforms
+                </div>
                 <div className="mt-4 font-mono text-[11px] tabular-nums text-[#f3d9bc]/60">
                   {totalImpressionsRange || "—"}
                 </div>
@@ -318,10 +343,32 @@ export default async function Home({
         ) : null}
 
         {/* ---------- per-platform analytics ---------- */}
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {analytics.map((metric) => (
-            <AnalyticsCard key={metric.platform} metric={metric} />
-          ))}
+        <section className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3 px-1">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.28em] text-[#e7b894]/80">
+                Per platform
+              </div>
+              <h2 className="font-display mt-2 text-2xl text-[#f3e7d7]">
+                Platform analytics
+              </h2>
+            </div>
+            <span className="max-w-xl text-right text-[11px] text-[#8f7d8c]">
+              Each platform&apos;s API defines &ldquo;impressions&rdquo; differently —
+              some honor the {periodLabel(period)} window, some return their own
+              default scope (e.g. YouTube&apos;s lifetime view count). That&apos;s
+              why these don&apos;t always add up to the headline impressions number.
+            </span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {analytics.map((metric) => (
+              <AnalyticsCard
+                key={metric.platform}
+                metric={metric}
+                periodLabelText={periodLabel(period)}
+              />
+            ))}
+          </div>
         </section>
 
         {/* ---------- content calendar ---------- */}
