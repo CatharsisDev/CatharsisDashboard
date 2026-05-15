@@ -64,14 +64,22 @@ function MetricTile({
   value,
   sub,
   delta,
+  info,
 }: {
   label: React.ReactNode;
   value: string;
   sub?: string;
   delta?: number;
+  /** Optional `?` tooltip rendered in the top-right corner of the tile. */
+  info?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-white/5 bg-black/15 p-4">
+    <div className="relative rounded-2xl border border-white/5 bg-black/15 p-4">
+      {info ? (
+        <span className="absolute right-2 top-2">
+          <InfoTooltip text={info} position="left" />
+        </span>
+      ) : null}
       <div className="text-[10px] uppercase tracking-[0.2em] text-[#b9a7b6]">{label}</div>
       <div className="mt-2 flex items-baseline gap-2">
         <div className="break-words font-display text-3xl text-[#f3e7d7]">{value}</div>
@@ -578,12 +586,7 @@ export default async function WebAnalyticsPage({
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <MetricTile
-                label={
-                  <>
-                    Active users ({shortP})
-                    <InfoTooltip text="GA4's headline visitor metric: unique users who triggered any event in the window. Counted by the GA4 client-id cookie, so a single human across two browsers shows as two. Closest GA4 equivalent to 'visitors' in older analytics tools." />
-                  </>
-                }
+                label={`Active users (${shortP})`}
                 value={formatNumber(snapshot.kpis.activeUsers)}
                 sub={
                   snapshot.kpis.sessions !== undefined
@@ -591,39 +594,27 @@ export default async function WebAnalyticsPage({
                     : "no sessions yet"
                 }
                 delta={deltaPct(snapshot.kpis.activeUsers, priorKpis?.activeUsers)}
+                info="GA4's headline visitor metric: unique users who triggered any event in the window. Counted by the GA4 client-id cookie, so a single human across two browsers shows as two. Closest GA4 equivalent to 'visitors' in older analytics tools."
               />
               <MetricTile
-                label={
-                  <>
-                    Page views ({shortP})
-                    <InfoTooltip text="Sum of GA4's screen_view + page_view events. On a single-page app, each client-side route change usually fires a fresh page_view, so this number is typically higher than 'unique page loads'." />
-                  </>
-                }
+                label={`Page views (${shortP})`}
                 value={formatNumber(snapshot.kpis.pageViews)}
                 sub="screen_view + page_view"
                 delta={deltaPct(snapshot.kpis.pageViews, priorKpis?.pageViews)}
+                info="Sum of GA4's screen_view + page_view events. On a single-page app, each client-side route change usually fires a fresh page_view, so this number is typically higher than 'unique page loads'."
               />
               <MetricTile
-                label={
-                  <>
-                    Avg engagement time
-                    <InfoTooltip text="GA4's modern replacement for 'time on site' / bounce rate. Computed as total user-engagement time ÷ sessions in the window. Engagement time = seconds the page was the foreground tab and the user was actively interacting." />
-                  </>
-                }
+                label="Avg engagement time"
                 value={formatDuration(snapshot.kpis.avgEngagementTimeSec)}
                 sub="per session"
                 delta={deltaPct(
                   snapshot.kpis.avgEngagementTimeSec,
                   priorKpis?.avgEngagementTimeSec,
                 )}
+                info="GA4's modern replacement for 'time on site' / bounce rate. Computed as total user-engagement time ÷ sessions in the window. Engagement time = seconds the page was the foreground tab and the user was actively interacting."
               />
               <MetricTile
-                label={
-                  <>
-                    Key events ({shortP})
-                    <InfoTooltip text="Total count of events you've flagged as 'key events' (formerly 'conversions') in GA4 → Admin → Events. Things like sign-up clicks, form submissions, etc. Shows 0 if you haven't marked any events as key yet." />
-                  </>
-                }
+                label={`Key events (${shortP})`}
                 value={formatNumber(snapshot.kpis.keyEvents)}
                 sub={
                   snapshot.kpis.keyEvents
@@ -631,6 +622,7 @@ export default async function WebAnalyticsPage({
                     : "none flagged in GA4"
                 }
                 delta={deltaPct(snapshot.kpis.keyEvents, priorKpis?.keyEvents)}
+                info="Total count of events you've flagged as 'key events' (formerly 'conversions') in GA4 → Admin → Events. Things like sign-up clicks, form submissions, etc. Shows 0 if you haven't marked any events as key yet."
               />
             </div>
           </header>

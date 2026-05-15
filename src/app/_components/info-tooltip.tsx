@@ -5,7 +5,11 @@
 // touch devices get the same explanation on long-press.
 //
 // Shared across /, /app, and /web wherever a number's definition isn't
-// obvious from its label.
+// obvious from its label. We render the "?" as an inline SVG `<text>` with
+// `dominantBaseline="central"` so the glyph sits perfectly centered inside
+// the circle — using literal `?` text with flex-centering leaves it
+// looking slightly low because the question-mark's visual mass is in its
+// upper hook, not its geometric centre.
 
 export default function InfoTooltip({
   text,
@@ -15,15 +19,33 @@ export default function InfoTooltip({
   position?: "top" | "right" | "left" | "bottom";
 }) {
   return (
-    <span className="group/info relative ml-1 inline-flex align-middle">
+    <span className="group/info relative inline-flex align-middle leading-none">
       <span
         tabIndex={0}
         role="img"
         aria-label={`More info: ${text}`}
         title={text}
-        className="inline-flex h-3.5 w-3.5 cursor-help items-center justify-center rounded-full border border-[#e7b894]/40 bg-[#e7b894]/10 text-[9px] font-bold text-[#e7b894] outline-none transition hover:bg-[#e7b894]/25 focus:bg-[#e7b894]/25"
+        className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full border border-[#e7b894]/40 bg-[#e7b894]/10 text-[#e7b894] outline-none transition hover:bg-[#e7b894]/25 focus:bg-[#e7b894]/25"
       >
-        ?
+        <svg
+          viewBox="0 0 16 16"
+          xmlns="http://www.w3.org/2000/svg"
+          className="h-full w-full"
+          fill="currentColor"
+          aria-hidden
+        >
+          <text
+            x="8"
+            y="8"
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize="11"
+            fontWeight="700"
+            fontFamily="system-ui, -apple-system, sans-serif"
+          >
+            ?
+          </text>
+        </svg>
       </span>
       <span
         role="tooltip"

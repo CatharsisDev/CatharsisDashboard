@@ -37,9 +37,23 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("en-GB").format(value);
 }
 
-function StatBox({ label, value }: { label: React.ReactNode; value: number }) {
+function StatBox({
+  label,
+  value,
+  info,
+}: {
+  label: React.ReactNode;
+  value: number;
+  /** Optional `?` tooltip rendered in the top-right corner of the card. */
+  info?: string;
+}) {
   return (
-    <div className="rounded-2xl border border-white/5 bg-black/15 p-4">
+    <div className="relative rounded-2xl border border-white/5 bg-black/15 p-4">
+      {info ? (
+        <span className="absolute right-2 top-2">
+          <InfoTooltip text={info} position="left" />
+        </span>
+      ) : null}
       <div className="text-[10px] uppercase tracking-[0.2em] text-[#b9a7b6]">{label}</div>
       <div className="mt-2 break-words font-display text-3xl text-[#f3e7d7]">
         {formatNumber(value)}
@@ -167,57 +181,41 @@ function AnalyticsCard({
       </div>
       <div className="grid grid-cols-2 gap-3">
         <StatBox
-          label={
-            <>
-              Followers
-              <InfoTooltip text={platformStatInfo(metric.platform, "followers")} />
-            </>
-          }
+          label="Followers"
           value={summary.followers}
+          info={platformStatInfo(metric.platform, "followers")}
         />
         <StatBox
-          label={
-            <>
-              Impressions
-              <InfoTooltip text={impressionInfo(metric.platform)} />
-            </>
-          }
+          label="Impressions"
           value={summary.impressions}
+          info={impressionInfo(metric.platform)}
         />
         <StatBox
-          label={
-            <>
-              Likes
-              <InfoTooltip text={platformStatInfo(metric.platform, "likes")} />
-            </>
-          }
+          label="Likes"
           value={summary.likes}
+          info={platformStatInfo(metric.platform, "likes")}
         />
         <StatBox
-          label={
-            <>
-              Comments
-              <InfoTooltip text={platformStatInfo(metric.platform, "comments")} />
-            </>
-          }
+          label="Comments"
           value={summary.comments}
+          info={platformStatInfo(metric.platform, "comments")}
         />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-[#d9c9bc] sm:grid-cols-4">
-        <span className="soft-pill flex items-center rounded-full px-3 py-1">
-          Reach: {formatNumber(summary.reach)}
+        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
+          <span>Reach: {formatNumber(summary.reach)}</span>
           <InfoTooltip text={platformStatInfo(metric.platform, "reach")} />
         </span>
-        <span className="soft-pill flex items-center rounded-full px-3 py-1">
-          Profile views: {formatNumber(summary.profileViews)}
+        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
+          <span>Profile views: {formatNumber(summary.profileViews)}</span>
           <InfoTooltip text={platformStatInfo(metric.platform, "profileViews")} />
         </span>
-        <span className="soft-pill flex items-center rounded-full px-3 py-1">
-          Shares: {formatNumber(summary.shares)}
+        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
+          <span>Shares: {formatNumber(summary.shares)}</span>
           <InfoTooltip text={platformStatInfo(metric.platform, "shares")} />
         </span>
-        <span className="soft-pill flex items-center rounded-full px-3 py-1">
-          Saves: {formatNumber(summary.saves)}
+        <span className="soft-pill flex items-center justify-between gap-1.5 rounded-full px-3 py-1">
+          <span>Saves: {formatNumber(summary.saves)}</span>
           <InfoTooltip text={platformStatInfo(metric.platform, "saves")} />
         </span>
       </div>
@@ -436,13 +434,15 @@ export default async function Home({
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="card-ember rounded-3xl p-5">
-                <div className="flex items-center text-[10px] uppercase tracking-[0.22em] text-[#f3d9bc]">
-                  Impressions · {periodLabel(period)}
+              <div className="card-ember relative rounded-3xl p-5">
+                <span className="absolute right-3 top-3">
                   <InfoTooltip
                     text="Sum of every post you published in this window, multiplied by each post's impression count from its source platform. Different from the per-platform 'Impressions' cards below, which show platform-defined profile-level numbers and may not sum to this value."
-                    position="right"
+                    position="left"
                   />
+                </span>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-[#f3d9bc]">
+                  Impressions · {periodLabel(period)}
                 </div>
                 <div className="font-display mt-3 text-5xl tracking-tight text-[#fff3e0]">
                   {formatNumber(totalImpressions)}
