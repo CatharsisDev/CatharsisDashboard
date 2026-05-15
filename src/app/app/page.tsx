@@ -6,6 +6,7 @@ import { getProvider } from "@/lib/analytics";
 import { inspectGooglePlayConfig } from "@/lib/analytics/googleplay";
 import type { Platform } from "@/lib/analytics/types";
 import { parsePeriod, periodDays, periodLabel, periodShortLabel } from "@/lib/period";
+import InfoTooltip from "../_components/info-tooltip";
 import type {
   ActiveDevicesSummary,
   AppMeta,
@@ -70,7 +71,15 @@ function Stars({ value, size = "md" }: { value: number; size?: "sm" | "md" }) {
 }
 
 // ---- tiles --------------------------------------------------------------
-function MetricTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function MetricTile({
+  label,
+  value,
+  sub,
+}: {
+  label: React.ReactNode;
+  value: string;
+  sub?: string;
+}) {
   return (
     <div className="rounded-2xl border border-white/5 bg-black/15 p-4">
       <div className="text-[10px] uppercase tracking-[0.2em] text-[#b9a7b6]">{label}</div>
@@ -1203,7 +1212,18 @@ export default async function AppAnalyticsPage({
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <MetricTile
-                label="Average rating"
+                label={
+                  <>
+                    Average rating
+                    <InfoTooltip
+                      text={
+                        platform === "android"
+                          ? "Average across recent customer reviews returned by the Play Developer API. Play limits this to the last 7 days of reviews, so this is a rolling sample of the latest sentiment — not the lifetime store rating shown on your Play listing."
+                          : "Average across the recent customer reviews returned by App Store Connect. The store-level all-time rating shown on your iOS listing may differ; this is what's in the latest review batch."
+                      }
+                    />
+                  </>
+                }
                 value={snapshot.ratings ? snapshot.ratings.average.toFixed(2) : "—"}
                 sub={
                   snapshot.ratings
@@ -1212,7 +1232,18 @@ export default async function AppAnalyticsPage({
                 }
               />
               <MetricTile
-                label={`Installs (${periodShortLabel(period)})`}
+                label={
+                  <>
+                    Installs ({periodShortLabel(period)})
+                    <InfoTooltip
+                      text={
+                        platform === "android"
+                          ? "New install events from Play Console Statistics CSVs over the selected window. 'Events' means first-time installs by users; one user adding the app on three devices counts once. Distinct from the Install base panel (current snapshot)."
+                          : "First-time downloads from Apple Sales & Trends over the selected window. Doesn't include redownloads or updates — those are tracked separately on iOS. Apple's daily reports lag ~24–48h."
+                      }
+                    />
+                  </>
+                }
                 value={snapshot.installs ? formatNumber(snapshot.installs.total) : "—"}
                 sub={
                   snapshot.installs
@@ -1227,7 +1258,18 @@ export default async function AppAnalyticsPage({
                 }
               />
               <MetricTile
-                label={`Proceeds (${periodShortLabel(period)})`}
+                label={
+                  <>
+                    Proceeds ({periodShortLabel(period)})
+                    <InfoTooltip
+                      text={
+                        platform === "android"
+                          ? "Developer net proceeds — what Google deposits to your account after taking its commission, refunds, and currency conversion. Doesn't match gross sales. Currency is your bank's primary settlement currency."
+                          : "Developer net proceeds — what Apple deposits to your account after taking its commission (15% for Small Business Program, 30% otherwise), refunds, and currency conversion. Currency is your dominant settlement currency for the window."
+                      }
+                    />
+                  </>
+                }
                 value={formatMoney(snapshot.finance?.proceeds)}
                 sub={
                   snapshot.finance?.proceeds
@@ -1238,7 +1280,18 @@ export default async function AppAnalyticsPage({
                 }
               />
               <MetricTile
-                label="Active subscribers"
+                label={
+                  <>
+                    Active subscribers
+                    <InfoTooltip
+                      text={
+                        platform === "android"
+                          ? "Current count of users in an active paid period across all subscription products. Doesn't include users in grace periods or billing retry — those are tracked separately on the Subscriptions tab."
+                          : "Current count of users in an active paid period across all subscription products at the snapshot date. Doesn't include users in billing retry, grace, or pending renewal."
+                      }
+                    />
+                  </>
+                }
                 value={
                   snapshot.subscriptions?.totalActive !== undefined
                     ? formatNumber(snapshot.subscriptions.totalActive)

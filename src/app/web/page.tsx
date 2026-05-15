@@ -14,6 +14,7 @@ import {
 } from "@/lib/analytics/web";
 import { parsePeriod, periodLabel, type Period } from "@/lib/period";
 import PeriodToggle from "../_components/period-toggle";
+import InfoTooltip from "../_components/info-tooltip";
 import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
 
 // /web is dynamic — every visit hits GA4 fresh. The shared loading.tsx now
@@ -64,7 +65,7 @@ function MetricTile({
   sub,
   delta,
 }: {
-  label: string;
+  label: React.ReactNode;
   value: string;
   sub?: string;
   delta?: number;
@@ -577,7 +578,12 @@ export default async function WebAnalyticsPage({
             </div>
             <div className="mt-6 grid gap-4 md:grid-cols-4">
               <MetricTile
-                label={`Active users (${shortP})`}
+                label={
+                  <>
+                    Active users ({shortP})
+                    <InfoTooltip text="GA4's headline visitor metric: unique users who triggered any event in the window. Counted by the GA4 client-id cookie, so a single human across two browsers shows as two. Closest GA4 equivalent to 'visitors' in older analytics tools." />
+                  </>
+                }
                 value={formatNumber(snapshot.kpis.activeUsers)}
                 sub={
                   snapshot.kpis.sessions !== undefined
@@ -587,13 +593,23 @@ export default async function WebAnalyticsPage({
                 delta={deltaPct(snapshot.kpis.activeUsers, priorKpis?.activeUsers)}
               />
               <MetricTile
-                label={`Page views (${shortP})`}
+                label={
+                  <>
+                    Page views ({shortP})
+                    <InfoTooltip text="Sum of GA4's screen_view + page_view events. On a single-page app, each client-side route change usually fires a fresh page_view, so this number is typically higher than 'unique page loads'." />
+                  </>
+                }
                 value={formatNumber(snapshot.kpis.pageViews)}
                 sub="screen_view + page_view"
                 delta={deltaPct(snapshot.kpis.pageViews, priorKpis?.pageViews)}
               />
               <MetricTile
-                label="Avg engagement time"
+                label={
+                  <>
+                    Avg engagement time
+                    <InfoTooltip text="GA4's modern replacement for 'time on site' / bounce rate. Computed as total user-engagement time ÷ sessions in the window. Engagement time = seconds the page was the foreground tab and the user was actively interacting." />
+                  </>
+                }
                 value={formatDuration(snapshot.kpis.avgEngagementTimeSec)}
                 sub="per session"
                 delta={deltaPct(
@@ -602,7 +618,12 @@ export default async function WebAnalyticsPage({
                 )}
               />
               <MetricTile
-                label={`Key events (${shortP})`}
+                label={
+                  <>
+                    Key events ({shortP})
+                    <InfoTooltip text="Total count of events you've flagged as 'key events' (formerly 'conversions') in GA4 → Admin → Events. Things like sign-up clicks, form submissions, etc. Shows 0 if you haven't marked any events as key yet." />
+                  </>
+                }
                 value={formatNumber(snapshot.kpis.keyEvents)}
                 sub={
                   snapshot.kpis.keyEvents

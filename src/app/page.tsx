@@ -1,5 +1,6 @@
 import ContentCalendar from "./content-calendar";
 import PeriodToggle from "./_components/period-toggle";
+import InfoTooltip from "./_components/info-tooltip";
 import { parsePeriod, periodDays, periodLabel } from "@/lib/period";
 import { berlinTzLabel, formatBerlinDateTime } from "@/lib/tz";
 
@@ -36,7 +37,7 @@ function formatNumber(value: number) {
   return new Intl.NumberFormat("en-GB").format(value);
 }
 
-function StatBox({ label, value }: { label: string; value: number }) {
+function StatBox({ label, value }: { label: React.ReactNode; value: number }) {
   return (
     <div className="rounded-2xl border border-white/5 bg-black/15 p-4">
       <div className="text-[10px] uppercase tracking-[0.2em] text-[#b9a7b6]">{label}</div>
@@ -45,6 +46,97 @@ function StatBox({ label, value }: { label: string; value: number }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Per-platform explanation of what shows up under "Impressions" on each
+ * card. Each platform's API defines this slightly differently, so the
+ * tooltip clarifies what the number actually represents.
+ */
+/**
+ * Per-platform tooltip text for non-impression stats — followers, likes,
+ * comments, reach, profile views, shares, saves. Each definition is short
+ * enough to live in one branch of the switch but specific enough to clear
+ * up the most common questions ("why is X smaller / bigger than expected
+ * here?").
+ */
+function platformStatInfo(
+  platform: string,
+  stat: "followers" | "likes" | "comments" | "reach" | "profileViews" | "shares" | "saves",
+): string {
+  const p = platform.toLowerCase();
+  const isYouTube = /(youtube|yt)/.test(p);
+  const isPinterest = /(pin)/.test(p);
+  const isTikTok = /(tiktok|tt)/.test(p);
+  const isInsta = /(insta|ig)/.test(p);
+  const isX = /(twitter|^x$)/.test(p);
+
+  switch (stat) {
+    case "followers":
+      if (isYouTube) return "Channel subscriber count. Unsubscribes and account deletions are reflected immediately. Includes anonymous subscribers if your channel allows them.";
+      if (isPinterest) return "Pinterest account follower count, current snapshot.";
+      if (isTikTok) return "TikTok account follower count, current snapshot — fluctuates as accounts unfollow or get banned.";
+      if (isInsta) return "Instagram account follower count, current snapshot. Doesn't include followers from linked Threads/Facebook accounts.";
+      if (isX) return "X account follower count. May exclude accounts X has flagged as inauthentic.";
+      return "Current account follower count — always a snapshot, not period-scoped.";
+
+    case "likes":
+      if (isYouTube) return "Sum of 'like' button taps across all videos in the window. YouTube's API doesn't separate likes from dislikes here.";
+      if (isPinterest) return "Pin 'love' reactions over the window. Saves count separately (see the 'Saves' pill).";
+      if (isTikTok) return "Hearts on posts in the window. One viewer can heart a post once.";
+      if (isInsta) return "Likes on feed posts and reels in the window. Story reactions count separately on Instagram's API and may not be included here.";
+      if (isX) return "Likes (heart taps) on tweets you authored in the window.";
+      return "Total 'like' reactions across posts in the window — counting rules vary by platform.";
+
+    case "comments":
+      if (isYouTube) return "Top-level comments + replies on videos in the window. Comments you posted on others' videos don't count.";
+      if (isPinterest) return "Comments left on your pins. Pinterest comment activity is generally lower than on other platforms.";
+      if (isTikTok) return "Comments + replies under videos in the window. Doesn't include comments hidden by the filter words list.";
+      if (isInsta) return "Comments on feed posts, reels, and IGTV in the window. Story replies are separate (DMs) and not counted here.";
+      if (isX) return "Replies to tweets you authored in the window. Quote-tweets are separate.";
+      return "Total comments/replies on posts in the window.";
+
+    case "reach":
+      return "Unique accounts that saw your content at least once. Reach ≤ Impressions because a single account can be impressed multiple times. Some platforms don't expose reach via API and will show 0 here.";
+    case "profileViews":
+      return "Profile/channel page visits in the window. A different signal from impressions — these are people who actively clicked through to your profile.";
+    case "shares":
+      if (isX) return "Retweets/reposts of your tweets in the window.";
+      if (isInsta) return "External shares of feed posts/reels (DMs, Stories, off-platform). Doesn't include in-feed reshares.";
+      return "Times someone shared your post outward (DM, repost, off-platform link).";
+    case "saves":
+      if (isPinterest) return "Times your pin was re-pinned to another board. Pinterest's primary engagement signal — usually higher than likes.";
+      return "Times someone saved your post to revisit later (bookmarks/saves).";
+  }
+}
+
+function impressionInfo(platform: string): string {
+  const p = platform.toLowerCase();
+  if (/(tiktok|tt)/.test(p)) {
+    return "Total video views in TikTok's analytics window (7–28 days). Loops by the same viewer can count again.";
+  }
+  if (/(insta|ig)/.test(p)) {
+    return "Times your content appeared on screen in IG Insights' default window (7 or 28 days). Meta is renaming this to 'views' in newer API versions.";
+  }
+  if (/(twitter|^x$)/.test(p)) {
+    return "Times your tweets were rendered in feeds or search results, account-wide over the last ~28 days. Free API tier returns very little.";
+  }
+  if (/(youtube|yt)/.test(p)) {
+    return "Despite the label, this is channel-level lifetime views — YouTube reserves 'impressions' for thumbnail appearances in recommendations, which requires a different API scope. Expect this number to be much bigger than the others.";
+  }
+  if (/(pin)/.test(p)) {
+    return "Times your pins appeared in home feeds, search results, or related-pins panels over a ~30-day window. Saves/repins generate new impressions when seen by the saver's followers.";
+  }
+  if (/(facebook|fb)/.test(p)) {
+    return "Times your posts appeared on screen in Facebook's analytics window.";
+  }
+  if (/(linkedin|li)/.test(p)) {
+    return "Times your posts appeared in LinkedIn feeds, account-wide.";
+  }
+  if (/(thread)/.test(p)) {
+    return "Times your threads were displayed in feeds.";
+  }
+  return "What 'impressions' counts varies by platform — see each platform's analytics docs for their exact definition.";
 }
 
 function AnalyticsCard({
@@ -74,16 +166,60 @@ function AnalyticsCard({
         Followers = snapshot · others = {periodLabelText} (where platform supports it)
       </div>
       <div className="grid grid-cols-2 gap-3">
-        <StatBox label="Followers" value={summary.followers} />
-        <StatBox label="Impressions" value={summary.impressions} />
-        <StatBox label="Likes" value={summary.likes} />
-        <StatBox label="Comments" value={summary.comments} />
+        <StatBox
+          label={
+            <>
+              Followers
+              <InfoTooltip text={platformStatInfo(metric.platform, "followers")} />
+            </>
+          }
+          value={summary.followers}
+        />
+        <StatBox
+          label={
+            <>
+              Impressions
+              <InfoTooltip text={impressionInfo(metric.platform)} />
+            </>
+          }
+          value={summary.impressions}
+        />
+        <StatBox
+          label={
+            <>
+              Likes
+              <InfoTooltip text={platformStatInfo(metric.platform, "likes")} />
+            </>
+          }
+          value={summary.likes}
+        />
+        <StatBox
+          label={
+            <>
+              Comments
+              <InfoTooltip text={platformStatInfo(metric.platform, "comments")} />
+            </>
+          }
+          value={summary.comments}
+        />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-[#d9c9bc] sm:grid-cols-4">
-        <span className="soft-pill rounded-full px-3 py-1">Reach: {formatNumber(summary.reach)}</span>
-        <span className="soft-pill rounded-full px-3 py-1">Profile views: {formatNumber(summary.profileViews)}</span>
-        <span className="soft-pill rounded-full px-3 py-1">Shares: {formatNumber(summary.shares)}</span>
-        <span className="soft-pill rounded-full px-3 py-1">Saves: {formatNumber(summary.saves)}</span>
+        <span className="soft-pill flex items-center rounded-full px-3 py-1">
+          Reach: {formatNumber(summary.reach)}
+          <InfoTooltip text={platformStatInfo(metric.platform, "reach")} />
+        </span>
+        <span className="soft-pill flex items-center rounded-full px-3 py-1">
+          Profile views: {formatNumber(summary.profileViews)}
+          <InfoTooltip text={platformStatInfo(metric.platform, "profileViews")} />
+        </span>
+        <span className="soft-pill flex items-center rounded-full px-3 py-1">
+          Shares: {formatNumber(summary.shares)}
+          <InfoTooltip text={platformStatInfo(metric.platform, "shares")} />
+        </span>
+        <span className="soft-pill flex items-center rounded-full px-3 py-1">
+          Saves: {formatNumber(summary.saves)}
+          <InfoTooltip text={platformStatInfo(metric.platform, "saves")} />
+        </span>
       </div>
     </section>
   );
@@ -301,8 +437,12 @@ export default async function Home({
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="card-ember rounded-3xl p-5">
-                <div className="text-[10px] uppercase tracking-[0.22em] text-[#f3d9bc]">
+                <div className="flex items-center text-[10px] uppercase tracking-[0.22em] text-[#f3d9bc]">
                   Impressions · {periodLabel(period)}
+                  <InfoTooltip
+                    text="Sum of every post you published in this window, multiplied by each post's impression count from its source platform. Different from the per-platform 'Impressions' cards below, which show platform-defined profile-level numbers and may not sum to this value."
+                    position="right"
+                  />
                 </div>
                 <div className="font-display mt-3 text-5xl tracking-tight text-[#fff3e0]">
                   {formatNumber(totalImpressions)}
