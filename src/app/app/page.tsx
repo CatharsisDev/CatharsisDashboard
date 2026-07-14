@@ -87,7 +87,7 @@ function MetricTile({
     <div className="relative rounded-2xl border border-white/5 bg-black/15 p-4">
       {info ? (
         <span className="absolute right-2 top-2">
-          <InfoTooltip text={info} position="left" />
+          <InfoTooltip text={info} position="bottom-start" />
         </span>
       ) : null}
       <div className="text-[10px] uppercase tracking-[0.2em] text-[#b9a7b6]">{label}</div>

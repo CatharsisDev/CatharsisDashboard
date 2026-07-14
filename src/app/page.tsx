@@ -52,7 +52,7 @@ function StatBox({
     <div className="relative rounded-2xl border border-white/5 bg-black/15 p-4">
       {info ? (
         <span className="absolute right-2 top-2">
-          <InfoTooltip text={info} position="left" />
+          <InfoTooltip text={info} position="bottom-start" />
         </span>
       ) : null}
       <div className="text-[10px] uppercase tracking-[0.2em] text-[#b9a7b6]">{label}</div>
@@ -82,7 +82,7 @@ function MiniStatBox({
     <div className="relative rounded-2xl border border-white/5 bg-black/15 px-3 py-2.5">
       {info ? (
         <span className="absolute right-1.5 top-1.5">
-          <InfoTooltip text={info} position="left" />
+          <InfoTooltip text={info} position="bottom-start" />
         </span>
       ) : null}
       <div className="pr-5 text-[9px] uppercase tracking-[0.18em] text-[#b9a7b6]">{label}</div>
@@ -461,7 +461,7 @@ export default async function Home({
                       // Each post contributes its lifetime view count.
                       "For every post you published in the window, this counts its current lifetime view count from the source platform, then adds them all together. A single post that went viral 6 days ago and has 1M views today contributes all 1M — even though those views accumulated over the post's whole life. So the number can be much larger than 'impressions I earned in the last 7 days' — it's really 'impressions earned by posts I published in the last 7 days, counted forever'."
                     }
-                    position="left"
+                    position="bottom-start"
                   />
                 </span>
                 <div className="text-[10px] uppercase tracking-[0.22em] text-[#f3d9bc]">
