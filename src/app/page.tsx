@@ -91,95 +91,78 @@ function MiniStatBox({
   );
 }
 
-/**
- * Per-platform explanation of what shows up under "Impressions" on each
- * card. Each platform's API defines this slightly differently, so the
- * tooltip clarifies what the number actually represents.
- */
-/**
- * Per-platform tooltip text for non-impression stats — followers, likes,
- * comments, reach, profile views, shares, saves. Each definition is short
- * enough to live in one branch of the switch but specific enough to clear
- * up the most common questions ("why is X smaller / bigger than expected
- * here?").
- */
+// Tooltip copy convention across all per-platform stats: two clauses joined
+// by " · ". First clause = *what the number counts* (plain English). Second
+// clause = *the scope + a caveat* (which window, what's excluded, why it may
+// look surprising). Keeps every hover consistent and skimmable.
+
+const YT = /(youtube|yt)/;
+const PIN = /(pin)/;
+const TT = /(tiktok|tt)/;
+const IG = /(insta|ig)/;
+const XR = /(twitter|^x$)/;
+
 function platformStatInfo(
   platform: string,
   stat: "followers" | "likes" | "comments" | "reach" | "profileViews" | "shares" | "saves",
 ): string {
   const p = platform.toLowerCase();
-  const isYouTube = /(youtube|yt)/.test(p);
-  const isPinterest = /(pin)/.test(p);
-  const isTikTok = /(tiktok|tt)/.test(p);
-  const isInsta = /(insta|ig)/.test(p);
-  const isX = /(twitter|^x$)/.test(p);
+  const isYT = YT.test(p);
+  const isPin = PIN.test(p);
+  const isTT = TT.test(p);
+  const isIG = IG.test(p);
+  const isX = XR.test(p);
 
   switch (stat) {
     case "followers":
-      if (isYouTube) return "Channel subscriber count. Unsubscribes and account deletions are reflected immediately. Includes anonymous subscribers if your channel allows them.";
-      if (isPinterest) return "Pinterest account follower count, current snapshot.";
-      if (isTikTok) return "TikTok account follower count, current snapshot — fluctuates as accounts unfollow or get banned.";
-      if (isInsta) return "Instagram account follower count, current snapshot. Doesn't include followers from linked Threads/Facebook accounts.";
-      if (isX) return "X account follower count. May exclude accounts X has flagged as inauthentic.";
-      return "Current account follower count — always a snapshot, not period-scoped.";
+      if (isYT) return "Channel subscribers · current snapshot; anonymous subscribers included if you allow them, unsubs reflected immediately.";
+      if (isPin) return "Pinterest account followers · current snapshot.";
+      if (isTT) return "TikTok account followers · current snapshot; fluctuates as accounts unfollow or get banned.";
+      if (isIG) return "Instagram account followers · current snapshot; doesn't count followers from linked Threads/Facebook accounts.";
+      if (isX) return "X account followers · current snapshot; may exclude accounts X flagged as inauthentic.";
+      return "Current follower count · always a snapshot, never period-scoped.";
 
     case "likes":
-      if (isYouTube) return "Sum of 'like' button taps across all videos in the window. YouTube's API doesn't separate likes from dislikes here.";
-      if (isPinterest) return "Pin 'love' reactions over the window. Saves count separately (see the 'Saves' pill).";
-      if (isTikTok) return "Hearts on posts in the window. One viewer can heart a post once.";
-      if (isInsta) return "Likes on feed posts and reels in the window. Story reactions count separately on Instagram's API and may not be included here.";
-      if (isX) return "Likes (heart taps) on tweets you authored in the window.";
-      return "Total 'like' reactions across posts in the window — counting rules vary by platform.";
+      if (isYT) return "'Like' button taps on your videos · summed over the platform's window; dislikes are separate and not counted here.";
+      if (isPin) return "Pin 'love' reactions · over the platform's window; saves are separate (see the Saves card).";
+      if (isTT) return "Hearts on your videos · over TikTok's window; one viewer can only heart a video once.";
+      if (isIG) return "Likes on feed posts + reels · over the window; story reactions are tracked separately by Instagram and may not appear here.";
+      if (isX) return "Likes (❤) on tweets you authored · over the window.";
+      return "Sum of 'like' reactions on your posts · window varies by platform.";
 
     case "comments":
-      if (isYouTube) return "Top-level comments + replies on videos in the window. Comments you posted on others' videos don't count.";
-      if (isPinterest) return "Comments left on your pins. Pinterest comment activity is generally lower than on other platforms.";
-      if (isTikTok) return "Comments + replies under videos in the window. Doesn't include comments hidden by the filter words list.";
-      if (isInsta) return "Comments on feed posts, reels, and IGTV in the window. Story replies are separate (DMs) and not counted here.";
-      if (isX) return "Replies to tweets you authored in the window. Quote-tweets are separate.";
-      return "Total comments/replies on posts in the window.";
+      if (isYT) return "Top-level comments + replies on your videos · over the window; comments you left on others' videos don't count here.";
+      if (isPin) return "Comments on your pins · over the window; Pinterest comment activity is generally low.";
+      if (isTT) return "Comments + replies under your videos · over the window; excludes comments hidden by your filter-words list.";
+      if (isIG) return "Comments on feed posts, reels, and IGTV · over the window; story replies land in DMs and aren't counted here.";
+      if (isX) return "Replies to tweets you authored · over the window; quote-tweets are counted as shares, not comments.";
+      return "Comments + replies on your posts · over the window.";
 
     case "reach":
-      return "Unique accounts that saw your content at least once. Reach ≤ Impressions because a single account can be impressed multiple times. Some platforms don't expose reach via API and will show 0 here.";
+      return "Unique accounts that saw at least one of your posts · reach ≤ impressions because one account can be impressed many times; platforms that don't expose reach show 0.";
     case "profileViews":
-      return "Profile/channel page visits in the window. A different signal from impressions — these are people who actively clicked through to your profile.";
+      return "Visits to your profile / channel page · over the window; distinct from impressions — these are people who actively clicked through.";
     case "shares":
-      if (isX) return "Retweets/reposts of your tweets in the window.";
-      if (isInsta) return "External shares of feed posts/reels (DMs, Stories, off-platform). Doesn't include in-feed reshares.";
-      return "Times someone shared your post outward (DM, repost, off-platform link).";
+      if (isX) return "Retweets / reposts of your tweets · over the window.";
+      if (isIG) return "External shares of feed posts + reels (DMs, Stories, off-platform links) · over the window; in-feed re-shares are counted separately.";
+      return "Times someone shared your post outward (DM, repost, off-platform link) · over the window.";
     case "saves":
-      if (isPinterest) return "Times your pin was re-pinned to another board. Pinterest's primary engagement signal — usually higher than likes.";
-      return "Times someone saved your post to revisit later (bookmarks/saves).";
+      if (isPin) return "Times your pin was re-pinned to another board · over the window; Pinterest's strongest engagement signal, usually higher than likes.";
+      return "Times someone bookmarked/saved your post to revisit later · over the window.";
   }
 }
 
 function impressionInfo(platform: string): string {
   const p = platform.toLowerCase();
-  if (/(tiktok|tt)/.test(p)) {
-    return "Total video views in TikTok's analytics window (7–28 days). Loops by the same viewer can count again.";
-  }
-  if (/(insta|ig)/.test(p)) {
-    return "Times your content appeared on screen in IG Insights' default window (7 or 28 days). Meta is renaming this to 'views' in newer API versions.";
-  }
-  if (/(twitter|^x$)/.test(p)) {
-    return "Times your tweets were rendered in feeds or search results, account-wide over the last ~28 days. Free API tier returns very little.";
-  }
-  if (/(youtube|yt)/.test(p)) {
-    return "Despite the label, this is channel-level lifetime views — YouTube reserves 'impressions' for thumbnail appearances in recommendations, which requires a different API scope. Expect this number to be much bigger than the others.";
-  }
-  if (/(pin)/.test(p)) {
-    return "Times your pins appeared in home feeds, search results, or related-pins panels over a ~30-day window. Saves/repins generate new impressions when seen by the saver's followers.";
-  }
-  if (/(facebook|fb)/.test(p)) {
-    return "Times your posts appeared on screen in Facebook's analytics window.";
-  }
-  if (/(linkedin|li)/.test(p)) {
-    return "Times your posts appeared in LinkedIn feeds, account-wide.";
-  }
-  if (/(thread)/.test(p)) {
-    return "Times your threads were displayed in feeds.";
-  }
-  return "What 'impressions' counts varies by platform — see each platform's analytics docs for their exact definition.";
+  if (TT.test(p)) return "Total video views · TikTok's rolling 7–28d window depending on API tier; loops by the same viewer can count again.";
+  if (IG.test(p)) return "Times your posts + reels appeared on screen · Instagram Insights' default 7–28d window; Meta is renaming this to 'views' in newer API versions.";
+  if (XR.test(p)) return "Times your tweets were rendered in feeds/search · account-wide, ~28d; free API tier returns very limited data here.";
+  if (YT.test(p)) return "Channel-level lifetime views · not really 'impressions' — YouTube reserves that word for thumbnail appearances in recommendations, which requires a different scope. Expect this to be much bigger than other platforms.";
+  if (PIN.test(p)) return "Times your pins appeared in home feed, search, or related-pins panels · ~30d window; a save/repin can generate fresh impressions later when the saver's followers see it.";
+  if (/(facebook|fb)/.test(p)) return "Times your posts appeared on screen · Facebook's analytics window.";
+  if (/(linkedin|li)/.test(p)) return "Times your posts appeared in LinkedIn feeds · account-wide.";
+  if (/(thread)/.test(p)) return "Times your threads were displayed in feeds · window varies.";
+  return "What 'impressions' counts varies by platform · see each platform's docs for the exact rules.";
 }
 
 function AnalyticsCard({
@@ -206,7 +189,7 @@ function AnalyticsCard({
           per-platform numbers to sum to the page's headline impressions
           (they often won't — see the disclaimer in the section header). */}
       <div className="mb-4 text-[10px] uppercase tracking-[0.18em] text-[#8f7d8c]">
-        Followers = snapshot · others = {periodLabelText} (where platform supports it)
+        Profile-level · {periodLabelText} where the platform allows it
       </div>
       <div className="grid grid-cols-2 gap-3">
         <StatBox
@@ -470,18 +453,25 @@ export default async function Home({
               <div className="card-ember relative rounded-3xl p-5">
                 <span className="absolute right-3 top-3">
                   <InfoTooltip
-                    text="Sum of every post you published in this window, multiplied by each post's impression count from its source platform. Different from the per-platform 'Impressions' cards below, which show platform-defined profile-level numbers and may not sum to this value."
+                    text={
+                      // This is subtle enough to warrant a longer tooltip.
+                      // The key insight — which caused hours of confusion —
+                      // is that the window filters *which posts* get counted,
+                      // not *which impressions on those posts* get counted.
+                      // Each post contributes its lifetime view count.
+                      "For every post you published in the window, this counts its current lifetime view count from the source platform, then adds them all together. A single post that went viral 6 days ago and has 1M views today contributes all 1M — even though those views accumulated over the post's whole life. So the number can be much larger than 'impressions I earned in the last 7 days' — it's really 'impressions earned by posts I published in the last 7 days, counted forever'."
+                    }
                     position="left"
                   />
                 </span>
                 <div className="text-[10px] uppercase tracking-[0.22em] text-[#f3d9bc]">
-                  Impressions · {periodLabel(period)}
+                  Views on recent uploads · {periodLabel(period)}
                 </div>
                 <div className="font-display mt-3 text-5xl tracking-tight text-[#fff3e0]">
                   {formatNumber(totalImpressions)}
                 </div>
                 <div className="mt-2 text-sm text-[#f3d9bc]/80">
-                  Post-level sum across connected platforms
+                  Lifetime views on posts you published in this window
                 </div>
                 <div className="mt-4 font-mono text-[11px] tabular-nums text-[#f3d9bc]/60">
                   {totalImpressionsRange || "—"}
@@ -527,10 +517,11 @@ export default async function Home({
               </h2>
             </div>
             <span className="max-w-xl text-right text-[11px] text-[#8f7d8c]">
-              Each platform&apos;s API defines &ldquo;impressions&rdquo; differently —
-              some honor the {periodLabel(period)} window, some return their own
-              default scope (e.g. YouTube&apos;s lifetime view count). That&apos;s
-              why these don&apos;t always add up to the headline impressions number.
+              Profile-level snapshots per platform. Every number here is what
+              that platform&apos;s API returned about your whole account — not a
+              sum of your posts. Won&apos;t add up to the headline card above
+              (different scope entirely), and windows vary by platform (hover
+              the <span className="font-mono">?</span> on any metric for the exact rules).
             </span>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
