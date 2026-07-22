@@ -473,8 +473,19 @@ export default async function Home({
                 <div className="mt-2 text-sm text-[#f3d9bc]/80">
                   Lifetime views on posts you published in this window
                 </div>
-                <div className="mt-4 font-mono text-[11px] tabular-nums text-[#f3d9bc]/60">
-                  {totalImpressionsRange || "—"}
+                <div className="mt-4 flex items-center justify-between gap-3 font-mono text-[11px] tabular-nums text-[#f3d9bc]/60">
+                  <span>{totalImpressionsRange || "—"}</span>
+                  {/* Escape hatch: download a per-month × per-platform CSV
+                      that adds up to this number, so the aggregate can be
+                      audited when it looks surprising. Route lives at
+                      /api/impressions-monthly-csv. */}
+                  <a
+                    href="/api/impressions-monthly-csv"
+                    className="rounded-full border border-[#f3d9bc]/25 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-[#f3d9bc]/85 transition hover:bg-[#f3d9bc]/10 hover:text-[#fff3e0]"
+                    title="Download a per-month × per-platform CSV breakdown of this number"
+                  >
+                    breakdown ↓
+                  </a>
                 </div>
               </div>
               <div className="card-glass rounded-3xl p-5">
