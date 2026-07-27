@@ -22,18 +22,34 @@ export const maxDuration = 300; // Vercel-friendly ceiling — up to 5 min for m
 const CONCURRENCY = 5;
 
 /**
- * Same views-metric extraction we use for the Top Posts feature: prefer
- * `views`, fall back to `impressions`, then `reach`. Matches Upload-Post's
- * ordering of what each platform considers the headline count.
+ * Views-metric extraction. Upload-Post's per-post response shape drifts by
+ * platform — TikTok uses `views`, Meta uses `impressions`, YouTube uses
+ * `view_count`, Pinterest uses `impression_count`, X uses `impression_count`
+ * with recent API changes. We check every candidate field and return the
+ * largest positive number so a present-but-zero synonym never shadows a
+ * populated one further down the list.
  */
 function pickViews(metrics: Record<string, number> | undefined): number {
   if (!metrics) return 0;
-  const v = Number(metrics.views ?? 0);
-  if (v > 0) return v;
-  const i = Number(metrics.impressions ?? 0);
-  if (i > 0) return i;
-  const r = Number(metrics.reach ?? 0);
-  return r > 0 ? r : 0;
+  const candidates = [
+    "views",
+    "view_count",
+    "impressions",
+    "impression_count",
+    "total_views",
+    "plays",
+    "play_count",
+    "pin_impressions",
+    "reach",
+  ];
+  let best = 0;
+  for (const k of candidates) {
+    const raw = metrics[k];
+    if (raw === undefined || raw === null) continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > best) best = n;
+  }
+  return best;
 }
 
 /**

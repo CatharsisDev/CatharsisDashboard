@@ -48,6 +48,11 @@ export type AnalyticsMetric = {
   primary_impressions_field?: string;
   available_metrics?: string[];
   reach_timeseries?: Array<{ date: string; value: number }>;
+  // Upload-Post's response shape drifts by platform — Pinterest returns
+  // `follower_count`, YouTube uses `view_count`, some platforms nest
+  // `insights.impressions`. Keep an index signature so summarizeAnalytics
+  // can fall back to any of those without TypeScript complaining.
+  [key: string]: unknown;
 };
 
 export type AnalyticsResponse = Record<string, Omit<AnalyticsMetric, "platform">>;
@@ -243,6 +248,25 @@ export function normalizeScheduledPosts(response: ScheduleResponse): ScheduledPo
     .sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime());
 }
 
+/**
+ * Every metric-summary field checks a *list* of possible field names because
+ * Upload-Post's response shape drifts per platform. Pinterest returns
+ * `follower_count` where TikTok returns `followers`; Meta uses `impressions`
+ * where YouTube uses `view_count`, etc. The picker takes the first
+ * positive number it finds so a present-but-zero synonym doesn't shadow a
+ * populated one further down the fallback list.
+ */
+function pickNumber(source: Record<string, unknown>, keys: string[]): number {
+  let best = 0;
+  for (const k of keys) {
+    const raw = source[k];
+    if (raw === undefined || raw === null) continue;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > best) best = n;
+  }
+  return best;
+}
+
 export function summarizeAnalytics(metric?: AnalyticsMetric) {
   if (!metric) {
     return {
@@ -257,14 +281,35 @@ export function summarizeAnalytics(metric?: AnalyticsMetric) {
     };
   }
 
+  const m = metric as Record<string, unknown>;
   return {
-    followers: Number(metric.followers || 0),
-    impressions: Number(metric.impressions || metric.views || 0),
-    reach: Number(metric.reach || 0),
-    profileViews: Number(metric.profileViews || 0),
-    likes: Number(metric.likes || 0),
-    comments: Number(metric.comments || 0),
-    shares: Number(metric.shares || 0),
-    saves: Number(metric.saves || 0),
+    followers: pickNumber(m, [
+      "followers",
+      "follower_count",
+      "followers_count",
+      "subscribers",
+      "subscriber_count",
+      "total_followers",
+    ]),
+    impressions: pickNumber(m, [
+      "impressions",
+      "impression_count",
+      "views",
+      "view_count",
+      "total_views",
+      "pin_impressions",
+      "plays",
+    ]),
+    reach: pickNumber(m, ["reach", "unique_impressions", "unique_reach"]),
+    profileViews: pickNumber(m, [
+      "profileViews",
+      "profile_views",
+      "profile_view_count",
+      "page_views",
+    ]),
+    likes: pickNumber(m, ["likes", "like_count", "favorites", "reactions", "reaction_count"]),
+    comments: pickNumber(m, ["comments", "comment_count", "replies", "reply_count"]),
+    shares: pickNumber(m, ["shares", "share_count", "reposts", "repost_count", "retweets"]),
+    saves: pickNumber(m, ["saves", "save_count", "bookmarks", "bookmark_count"]),
   };
 }
