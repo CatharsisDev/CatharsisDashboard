@@ -90,22 +90,39 @@ interface Row {
   totalViews: number;
 }
 
-function toCsv(rows: Row[], meta: { generatedAt: string; totalPosts: number; totalViews: number }): string {
+function toCsv(
+  rows: Row[],
+  meta: {
+    generatedAt: string;
+    totalPosts: number;
+    totalViews: number;
+    failedFetches: number;
+    postsWithZeroViews: number;
+    seenMetricFields: string[];
+  },
+): string {
   const header = "Month,Platform,Post count,Total views";
   const body = rows
     .map((r) => [r.month, r.platform, r.postCount, r.totalViews].join(","))
     .join("\n");
-  // Trailing metadata block so anyone opening the CSV sees the totals + when
-  // it was generated without needing to sum the rows themselves.
+  // Trailing metadata block. The seenMetricFields dump makes it obvious when
+  // Upload-Post is returning a field name our picker isn't recognizing —
+  // e.g. if you see 'playCount' or 'view_count' in the list but the totals
+  // are still low, that's the field to add to the picker.
   const footer = [
     "",
     `# Generated: ${meta.generatedAt}`,
-    `# Total posts across all months: ${meta.totalPosts}`,
-    `# Total lifetime views across all posts: ${meta.totalViews}`,
+    `# Total posts fetched successfully: ${meta.totalPosts}`,
+    `# Posts with 0 detected views: ${meta.postsWithZeroViews} (these had no field matching our picker — see next line)`,
+    `# Failed post-analytics fetches: ${meta.failedFetches} (rate-limited, deleted, or auth-expired)`,
+    `# Total lifetime views detected: ${meta.totalViews}`,
+    `# Fields observed across all posts' post_metrics: ${meta.seenMetricFields.join(", ") || "(none)"}`,
     "# Definition: 'Total views' = current lifetime view count of every post",
-    "#             published in the month, summed. Matches the headline",
-    "#             'Views on recent uploads' card on the dashboard when the",
-    "#             month falls inside the selected window.",
+    "#             published in the month, summed. If this doesn't match the",
+    "#             headline 'Views on recent uploads' card, compare the",
+    "#             'Fields observed' list above with the picker's field list",
+    "#             in src/app/api/impressions-monthly-csv/route.ts — likely a",
+    "#             field name mismatch.",
   ].join("\n");
   return `${header}\n${body}\n${footer}\n`;
 }
@@ -152,10 +169,19 @@ export async function GET() {
 
     let totalViews = 0;
     let totalPosts = 0;
+    let failedFetches = 0;
+    let postsWithZeroViews = 0;
+    // Track every distinct field name Upload-Post actually returned across
+    // any post's per-platform metrics — surfaces field names our picker
+    // might be missing so the user can tell us what to add.
+    const seenMetricFields = new Set<string>();
 
     for (const [i, id] of uniqueRequestIds.entries()) {
       const ana = analytics[i] as PostAnalyticsResponse | null;
-      if (!ana) continue;
+      if (!ana) {
+        failedFetches += 1;
+        continue;
+      }
       const ts = ana.post?.upload_timestamp || timestampByRequestId.get(id);
       const month = monthKey(ts);
       totalPosts += 1;
@@ -164,10 +190,20 @@ export async function GET() {
       // in the CSV since a post on 5 platforms contributes to 5 platform
       // rows for its month.
       const perPlatform = ana.platforms || {};
+      let anyViewsThisPost = false;
       for (const [platform, data] of Object.entries(perPlatform)) {
-        const views = pickViews(data.post_metrics);
-        if (views <= 0) continue;
+        // Record every field name we see, so the CSV footer can list them
+        // for the user to compare against our picker's expected names.
+        for (const field of Object.keys(data.post_metrics || {})) {
+          seenMetricFields.add(field);
+        }
 
+        const views = pickViews(data.post_metrics);
+
+        // Even zero-view rows land in the bucket now (as 0) — that way a
+        // post the picker couldn't score shows up as a row with 0 rather
+        // than silently vanishing. The postsWithZeroViews counter in the
+        // footer makes the gap between "fetched" and "counted" visible.
         let monthMap = buckets.get(month);
         if (!monthMap) {
           monthMap = new Map();
@@ -178,8 +214,13 @@ export async function GET() {
         cur.count += 1;
         cur.views += views;
         monthMap.set(key, cur);
-        totalViews += views;
+
+        if (views > 0) {
+          totalViews += views;
+          anyViewsThisPost = true;
+        }
       }
+      if (!anyViewsThisPost) postsWithZeroViews += 1;
     }
 
     // Flatten to rows, sorted newest-month-first, then platform alphabetical.
@@ -203,6 +244,9 @@ export async function GET() {
       generatedAt: new Date().toISOString(),
       totalPosts,
       totalViews,
+      failedFetches,
+      postsWithZeroViews,
+      seenMetricFields: Array.from(seenMetricFields).sort(),
     });
 
     // Filename includes today's date so repeated downloads don't collide.
